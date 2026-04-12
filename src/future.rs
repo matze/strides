@@ -1,8 +1,8 @@
 //! Spinner integration for futures.
 
-pub mod monitored;
+pub mod group;
 
-pub use monitored::Monitored;
+pub use group::Group;
 
 use std::future::Future;
 use std::io::Write;

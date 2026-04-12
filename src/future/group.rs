@@ -5,7 +5,7 @@ use std::{io::Write, pin::Pin};
 
 use crossterm::{QueueableCommand, cursor, terminal};
 use futures::stream::FuturesUnordered;
-use futures_lite::{FutureExt as _, Stream};
+use futures_lite::{FutureExt as _, Stream, stream};
 use owo_colors::OwoColorize;
 
 use crate::spinner::{Spinner, Ticks};
@@ -46,15 +46,49 @@ where
     }
 }
 
-/// Wrapper around a [`futures::stream::FuturesUnordered`] that monitors completion status of futures.
-pub struct Monitored<'a, F> {
+/// Per-task state tracking prefix, current message, and an optional messages stream.
+struct Task<'a> {
+    /// Static prefix/label shown before the message.
+    prefix: String,
+    /// Current message text, updated by the messages stream.
+    message: Option<String>,
+    /// Stream of dynamic messages.
+    messages: Box<dyn Stream<Item = String> + Unpin + 'a>,
+}
+
+/// A group of futures displayed as multi-line progress with per-task annotations.
+///
+/// Each future in the group occupies its own terminal line showing a spinner and a message. Lines
+/// are removed as futures complete.
+///
+/// Use [`push()`](Group::push) for static annotations or
+/// [`push_with_messages()`](Group::push_with_messages) for messages that update dynamically while
+/// the future runs.
+///
+/// `Group` implements [`Stream`], each time a future completes, the stream yields its output.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use std::time::Duration;
+/// use futures_lite::{StreamExt, future};
+/// use strides::future::Group;
+/// use strides::spinner;
+///
+/// future::block_on(async {
+///     let mut group = Group::new(spinner::styles::DOTS_3);
+///     group.push(async_io::Timer::after(Duration::from_secs(1)), "fast".into());
+///     group.push(async_io::Timer::after(Duration::from_secs(3)), "slow".into());
+///     group.for_each(|_| {}).await;
+/// });
+/// ```
+pub struct Group<'a, F> {
     /// Group of futures.
     inner: FuturesUnordered<Annotated<F>>,
     /// Spinner tick stream.
     ticks: Ticks<'a>,
-    /// Annotation mapping from id (index) to string. It is reset when the corresponding future
-    /// finished.
-    annotations: Vec<Option<String>>,
+    /// Per-task state. Set to `None` when the corresponding future completes.
+    tasks: Vec<Option<Task<'a>>>,
     /// Annotation style.
     annotation_style: owo_colors::Style,
     /// Current spinner character.
@@ -67,7 +101,7 @@ pub struct Monitored<'a, F> {
     start: Option<Instant>,
 }
 
-impl<'a, F> Monitored<'a, F>
+impl<'a, F> Group<'a, F>
 where
     F: Future,
 {
@@ -75,7 +109,7 @@ where
         Self {
             inner: FuturesUnordered::new(),
             ticks: spinner.ticks(),
-            annotations: Vec::new(),
+            tasks: Vec::new(),
             annotation_style: owo_colors::Style::new(),
             spinner: None,
             spinner_style: owo_colors::Style::new(),
@@ -99,15 +133,39 @@ where
         self
     }
 
-    /// Add `fut` to the monitored group and annotate it with `annotation`.
+    /// Add `fut` to the group with a static annotation.
     pub fn push(&mut self, fut: F, annotation: String) {
-        let id = self.annotations.len();
-        self.annotations.push(Some(annotation));
+        let id = self.tasks.len();
+        self.tasks.push(Some(Task {
+            prefix: annotation,
+            message: None,
+            messages: Box::new(stream::pending()),
+        }));
+        self.inner.push(Annotated::new(fut, id));
+    }
+
+    /// Add `fut` to the group with a static prefix and a stream of dynamic messages.
+    ///
+    /// The `prefix` is always shown (e.g. `"[1/4]"`).  Each time `messages` yields a value it
+    /// replaces the text shown after the prefix.  When the stream is exhausted the last message
+    /// remains visible.
+    pub fn push_with_messages(
+        &mut self,
+        fut: F,
+        prefix: String,
+        messages: impl Stream<Item = String> + Unpin + 'a,
+    ) {
+        let id = self.tasks.len();
+        self.tasks.push(Some(Task {
+            prefix,
+            message: None,
+            messages: Box::new(messages),
+        }));
         self.inner.push(Annotated::new(fut, id));
     }
 }
 
-impl<F> Stream for Monitored<'_, F>
+impl<F> Stream for Group<'_, F>
 where
     F: Future + Unpin,
 {
@@ -124,10 +182,17 @@ where
             this.spinner = spinner;
         }
 
+        // Poll per-task message streams.
+        for task in this.tasks.iter_mut().flatten() {
+            if let Poll::Ready(Some(msg)) = Pin::new(&mut task.messages).poll_next(cx) {
+                task.message = Some(msg);
+            }
+        }
+
         let mut stdout = std::io::stdout();
         let _ = stdout.queue(cursor::Hide);
 
-        for annotation in &this.annotations {
+        for task in &this.tasks {
             let _ = clear_line(&mut stdout);
 
             if let Some(spinner) = &this.spinner {
@@ -138,14 +203,20 @@ where
                 print!("[{:.2}s] ", elapsed.as_secs_f64());
             }
 
-            if let Some(annotation) = annotation {
-                println!("{}", annotation.style(this.annotation_style));
+            if let Some(task) = task {
+                let prefix = task.prefix.style(this.annotation_style);
+
+                if let Some(message) = &task.message {
+                    println!("{prefix} {message}");
+                } else {
+                    println!("{prefix}");
+                }
             }
         }
 
         let item = match inner.poll_next(cx) {
             Poll::Ready(Some((output, id))) => {
-                this.annotations[id] = None;
+                this.tasks[id] = None;
 
                 // Clear last and go up one line because we have one less future to track.
                 let _ = remove_last_line(&mut stdout);
@@ -160,7 +231,7 @@ where
 
         if !matches!(item, Poll::Ready(None)) {
             // Go up by number of active futures to overwrite them on the next iteration.
-            let active_futures = this.annotations.iter().filter(|a| a.is_some()).count();
+            let active_futures = this.tasks.iter().filter(|t| t.is_some()).count();
 
             if active_futures > 0 {
                 let _ = stdout.queue(cursor::MoveUp(active_futures as u16));

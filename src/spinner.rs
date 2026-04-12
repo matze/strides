@@ -14,11 +14,11 @@ pub mod styles {
     /// Three dots circling: `⠖⠲⠴⠦`.
     pub const DOTS_3: Spinner = Spinner::new("⠖⠲⠴⠦");
 
-    /// Sevent dots circling: `⣾⣽⣻⢿⡿⣟⣯⣷`.
-    pub const DOTS_7: &str = "⣾⣽⣻⢿⡿⣟⣯⣷";
+    /// Seven dots circling: `⣾⣽⣻⢿⡿⣟⣯⣷`.
+    pub const DOTS_7: Spinner = Spinner::new("⣾⣽⣻⢿⡿⣟⣯⣷");
 
     /// One dot circling in a large square: `⠁⠂⠄⡀⢀⠠⠐⠈`.
-    pub const DOT_LARGE_SQUARE: &str = "⠁⠂⠄⡀⢀⠠⠐⠈";
+    pub const DOT_LARGE_SQUARE: Spinner = Spinner::new("⠁⠂⠄⡀⢀⠠⠐⠈");
 
     /// Falling sand: `⠁⠂⠄⡀⡈⡐⡠⣀⣁⣂⣄⣌⣔⣤⣥⣦⣮⣶⣷⣿⡿⠿⢟⠟⡛⠛⠫⢋⠋⠍⡉⠉⠑⠡⢁`.
     pub const SAND: Spinner = Spinner::new("⠁⠂⠄⡀⡈⡐⡠⣀⣁⣂⣄⣌⣔⣤⣥⣦⣮⣶⣷⣿⡿⠿⢟⠟⡛⠛⠫⢋⠋⠍⡉⠉⠑⠡⢁");

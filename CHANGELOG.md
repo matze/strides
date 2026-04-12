@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+## 0.1.0
+
 ### Breaking changes
 
 - `ProgressStyle` moved from `stream` module to new `style` module. A

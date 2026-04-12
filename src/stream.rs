@@ -59,8 +59,8 @@ where
         }
 
         // Poll the message stream.
-        if let Poll::Ready(message) = messages.poll_next(cx) {
-            this.message = message.map(|m| m.to_string());
+        if let Poll::Ready(Some(message)) = messages.poll_next(cx) {
+            this.message = Some(message.to_string());
         }
 
         // Poll the wrapped stream.

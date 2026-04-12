@@ -53,8 +53,8 @@ where
 
         let messages = Pin::new(&mut this.messages);
 
-        if let Poll::Ready(message) = messages.poll_next(cx) {
-            this.message = message.map(|m| m.to_string());
+        if let Poll::Ready(Some(message)) = messages.poll_next(cx) {
+            this.message = Some(message.to_string());
         }
 
         let _ = clear_line(&mut std::io::stdout());

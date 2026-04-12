@@ -11,22 +11,25 @@ use std::task::{Context, Poll};
 
 use futures_lite::{FutureExt as _, Stream};
 
-use crate::spinner::Spinner;
+use crate::bar::Bar;
+use crate::style::ProgressStyle;
 use crate::term::clear_line;
 
 /// Future for the [`progress`](FutureExt::progress) method.
-pub struct Progress<F, T> {
+pub struct Progress<'a, F, T> {
     /// Wrapped future.
     inner: F,
     /// Spinner tick stream.
     ticks: T,
+    /// Progress bar style.
+    bar: Bar<'a>,
     /// Annotation for the future.
     message: String,
     /// Current spinner character.
     spinner: Option<char>,
 }
 
-impl<F, T> Future for Progress<F, T>
+impl<F, T> Future for Progress<'_, F, T>
 where
     F: Future + Unpin,
     T: Stream<Item = char> + Unpin,
@@ -47,10 +50,10 @@ where
 
         if matches!(item, Poll::Pending) {
             if let Some(spinner) = &this.spinner {
-                print!("{spinner}");
+                print!("{spinner} ");
             }
 
-            print!(" {}", this.message);
+            print!("{}", this.message);
         }
 
         std::io::stdout().flush().expect("flushing");
@@ -59,17 +62,20 @@ where
 }
 
 pub trait FutureExt: Future {
-    fn progress(
+    fn progress<'a>(
         self,
-        spinner: Spinner,
+        style: impl Into<ProgressStyle<'a>>,
         message: impl std::fmt::Display,
-    ) -> Progress<Self, impl Stream<Item = char>>
+    ) -> Progress<'a, Self, impl Stream<Item = char>>
     where
         Self: Sized,
     {
+        let style = style.into();
+
         Progress {
             inner: self,
-            ticks: spinner.ticks(),
+            ticks: style.spinner.ticks(),
+            bar: style.bar,
             message: message.to_string(),
             spinner: None,
         }

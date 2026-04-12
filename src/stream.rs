@@ -7,35 +7,9 @@ use std::task::Poll;
 use futures_lite::{Stream, stream};
 
 use crate::bar::Bar;
-use crate::spinner::Spinner;
 use crate::term::clear_line;
 
-#[derive(Clone)]
-pub struct ProgressStyle<'a> {
-    /// Spinner style to indicate activity.
-    spinner: Spinner<'a>,
-    /// Bar style to indicate progress.
-    bar: Bar<'a>,
-}
-
-impl<'a> ProgressStyle<'a> {
-    pub fn new() -> Self {
-        Self {
-            spinner: Spinner::inactive(),
-            bar: Bar::default(),
-        }
-    }
-
-    pub fn with_spinner(mut self, spinner: Spinner<'a>) -> Self {
-        self.spinner = spinner;
-        self
-    }
-
-    pub fn with_bar(mut self, bar: Bar<'a>) -> Self {
-        self.bar = bar;
-        self
-    }
-}
+pub use crate::style::ProgressStyle;
 
 /// Stream for the [`progress`](StreamExt::progress) and
 /// [`progress_with_messages`](StreamExt::progress_with_messages) methods.

@@ -5,7 +5,7 @@
 //!
 //! Instead of integrating progress bar and spinner UI elements along an asynchronous program,
 //! strides provides utilities to integrate these elements as part of the [`Future`] and
-//! [`Stream`](futures::Stream) abstractions.
+//! [`Stream`](futures_lite::Stream) abstractions.
 //!
 //! ## Spinners
 //!
@@ -25,23 +25,28 @@
 //! The [`spinner::styles`] module provides a few pre-defined spinner
 //! styles.
 //!
-//! ## Progress bars
+//! ## Progress styles
 //!
-//! A progress bar is a UI element that represents the completion status of work. At the time of
-//! this writing this is only applicable to (finite) streams. To create a progress bar, import the
-//! [`ProgressStyle`](crate::stream::ProgressStyle) struct and attach at least a
-//! [`Bar`](crate::bar::Bar) to style the progress bar:
+//! A [`ProgressStyle`](crate::style::ProgressStyle) bundles a [`Spinner`](crate::spinner::Spinner)
+//! and a [`Bar`](crate::bar::Bar) into a single configuration object that can be passed to both
+//! the futures and streams progress APIs:
 //!
 //! ```rust
-//! let style = strides::stream::ProgressStyle::new()
-//!     .with_bar(strides::bar::styles::PARALLELOGRAM);
+//! let style = strides::style::ProgressStyle::new()
+//!     .with_bar(strides::bar::styles::PARALLELOGRAM)
+//!     .with_spinner(strides::spinner::styles::DOTS_3);
 //! ```
 //!
-//! Then import the [`StreamExt`](crate::stream::StreamExt) extension to use the
+//! A bare [`Spinner`](crate::spinner::Spinner) can also be passed directly wherever a
+//! [`ProgressStyle`](crate::style::ProgressStyle) is expected.
+//!
+//! ## Streams
+//!
+//! Import the [`StreamExt`](crate::stream::StreamExt) extension to use the
 //! [`progress()`](crate::stream::StreamExt::progress) and
 //! [`progress_with_messages()`](crate::stream::StreamExt::progress_with_messages) APIs. The second
 //! parameter is a closure used to calculate the progress as a fraction between 0.0 and 1.0. The
-//! closure receives two parameters: the monotonically increasing item number and at reference to
+//! closure receives two parameters: the monotonically increasing item number and a reference to
 //! the item itself. The former is useful if the number of stream items is known upfront and
 //! determines the overall progress, whereas the second is useful to determine progress based on
 //! the item itself. For example, the number of downloaded bytes.
@@ -52,8 +57,9 @@
 //!
 //! In the simplest case, you can use strides to display that a [`Future`] has not completed yet. For
 //! that import the [`FutureExt`](crate::future::FutureExt) extension trait that adds the
-//! [`progress()`](crate::future::FutureExt::progress) method to futures which shows a spinner and
-//! a message:
+//! [`progress()`](crate::future::FutureExt::progress) and
+//! [`progress_with_messages()`](crate::future::FutureExt::progress_with_messages) methods to
+//! futures which show a spinner, an optional progress bar and a message:
 //!
 //! ```rust,no_run
 //! use strides::future::FutureExt;

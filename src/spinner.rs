@@ -10,17 +10,41 @@ use futures_lite::Stream;
 pub mod styles {
     use super::Spinner;
 
-    /// Segment of a circle circling: `◜◝◞◟`.
-    pub const CIRCLE: Spinner = Spinner::new("◜◝◞◟");
+    /// Arc segment circling: `◜◝◞◟`.
+    pub const ARC: Spinner = Spinner::new("◜◝◞◟");
 
-    /// Three dots circling: `⠖⠲⠴⠦`.
+    /// Braille dots: `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`.
+    pub const DOTS: Spinner = Spinner::new("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏");
+
+    /// Braille dots variant 2: `⠋⠙⠚⠞⠖⠦⠴⠲⠳⠓`.
+    pub const DOTS_2: Spinner = Spinner::new("⠋⠙⠚⠞⠖⠦⠴⠲⠳⠓");
+
+    /// Three braille dots circling: `⠖⠲⠴⠦`.
     pub const DOTS_3: Spinner = Spinner::new("⠖⠲⠴⠦");
 
-    /// Seven dots circling: `⣾⣽⣻⢿⡿⣟⣯⣷`.
+    /// Braille dots bouncing: `⠄⠆⠇⠋⠙⠸⠰⠠⠰⠸⠙⠋⠇⠆`.
+    pub const DOTS_4: Spinner = Spinner::new("⠄⠆⠇⠋⠙⠸⠰⠠⠰⠸⠙⠋⠇⠆");
+
+    /// Braille dots wave: `⠋⠙⠚⠒⠂⠂⠒⠲⠴⠦⠖⠒⠐⠐⠒⠓`.
+    pub const DOTS_5: Spinner = Spinner::new("⠋⠙⠚⠒⠂⠂⠒⠲⠴⠦⠖⠒⠐⠐⠒⠓");
+
+    /// Braille dots breathing: `⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠴⠲⠒⠂⠂⠒⠚⠙⠉`.
+    pub const DOTS_6: Spinner = Spinner::new("⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠴⠲⠒⠂⠂⠒⠚⠙⠉");
+
+    /// Seven braille dots circling: `⣾⣽⣻⢿⡿⣟⣯⣷`.
     pub const DOTS_7: Spinner = Spinner::new("⣾⣽⣻⢿⡿⣟⣯⣷");
+
+    /// Braille dots pulsing: `⠁⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈`.
+    pub const DOTS_8: Spinner = Spinner::new("⠁⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈");
+
+    /// Two braille dots circling: `⠃⠉⠘⠰⢠⣀⡄⠆`.
+    pub const DOTS_CIRCLE: Spinner = Spinner::new("⠃⠉⠘⠰⢠⣀⡄⠆");
 
     /// One dot circling in a large square: `⠁⠂⠄⡀⢀⠠⠐⠈`.
     pub const DOT_LARGE_SQUARE: Spinner = Spinner::new("⠁⠂⠄⡀⢀⠠⠐⠈");
+
+    /// Star: `✶✸✹✺✹✷`.
+    pub const STAR: Spinner = Spinner::new("✶✸✹✺✹✷");
 
     /// Falling sand: `⠁⠂⠄⡀⡈⡐⡠⣀⣁⣂⣄⣌⣔⣤⣥⣦⣮⣶⣷⣿⡿⠿⢟⠟⡛⠛⠫⢋⠋⠍⡉⠉⠑⠡⢁`.
     pub const SAND: Spinner = Spinner::new("⠁⠂⠄⡀⡈⡐⡠⣀⣁⣂⣄⣌⣔⣤⣥⣦⣮⣶⣷⣿⡿⠿⢟⠟⡛⠛⠫⢋⠋⠍⡉⠉⠑⠡⢁");

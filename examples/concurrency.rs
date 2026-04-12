@@ -8,7 +8,7 @@ use strides::spinner;
 fn main() {
     // Create a group of futures that is tracked for completion and that uses the bright purple
     // dots to represent progress.
-    let mut group = Monitored::new(spinner::styles::DOTS_3.ticks())
+    let mut group = Monitored::new(spinner::styles::DOTS_3)
         .with_spinner_style(owo_colors::Style::new().bright_purple().bold())
         .with_elapsed_time(true);
 

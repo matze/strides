@@ -1,13 +1,14 @@
+use std::future::Future;
 use std::task::{Context, Poll};
 use std::time::Instant;
 use std::{io::Write, pin::Pin};
 
 use crossterm::{QueueableCommand, cursor, terminal};
-use futures::Stream;
 use futures::stream::FuturesUnordered;
-use futures_lite::FutureExt as _;
+use futures_lite::{FutureExt as _, Stream};
 use owo_colors::OwoColorize;
 
+use crate::spinner::{Spinner, Ticks};
 use crate::term::clear_line;
 
 /// Helper future that allows us to track the completion status of the wrapped future F.
@@ -46,11 +47,11 @@ where
 }
 
 /// Wrapper around a [`futures::stream::FuturesUnordered`] that monitors completion status of futures.
-pub struct Monitored<F, T> {
+pub struct Monitored<'a, F> {
     /// Group of futures.
     inner: FuturesUnordered<Annotated<F>>,
     /// Spinner tick stream.
-    ticks: T,
+    ticks: Ticks<'a>,
     /// Annotation mapping from id (index) to string. It is reset when the corresponding future
     /// finished.
     annotations: Vec<Option<String>>,
@@ -66,18 +67,14 @@ pub struct Monitored<F, T> {
     start: Option<Instant>,
 }
 
-impl<F, T> Monitored<F, T>
+impl<'a, F> Monitored<'a, F>
 where
     F: Future,
 {
-    pub fn new(ticks: T) -> Self
-    where
-        T: Stream<Item = char> + Unpin,
-    {
-        let inner = FuturesUnordered::new();
+    pub fn new(spinner: Spinner<'a>) -> Self {
         Self {
-            inner,
-            ticks,
+            inner: FuturesUnordered::new(),
+            ticks: spinner.ticks(),
             annotations: Vec::new(),
             annotation_style: owo_colors::Style::new(),
             spinner: None,
@@ -110,10 +107,9 @@ where
     }
 }
 
-impl<F, T> Stream for Monitored<F, T>
+impl<F> Stream for Monitored<'_, F>
 where
     F: Future + Unpin,
-    T: Stream<Item = char> + Unpin,
 {
     type Item = F::Output;
 

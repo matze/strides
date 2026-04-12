@@ -1,8 +1,10 @@
 //! Spinner UI element.
 
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
-use futures_lite::{Stream, StreamExt, stream};
+use futures_lite::Stream;
 
 /// Pre-defined spinner styles.
 pub mod styles {
@@ -22,6 +24,42 @@ pub mod styles {
 
     /// Falling sand: `⠁⠂⠄⡀⡈⡐⡠⣀⣁⣂⣄⣌⣔⣤⣥⣦⣮⣶⣷⣿⡿⠿⢟⠟⡛⠛⠫⢋⠋⠍⡉⠉⠑⠡⢁`.
     pub const SAND: Spinner = Spinner::new("⠁⠂⠄⡀⡈⡐⡠⣀⣁⣂⣄⣌⣔⣤⣥⣦⣮⣶⣷⣿⡿⠿⢟⠟⡛⠛⠫⢋⠋⠍⡉⠉⠑⠡⢁");
+}
+
+/// A stream of spinner characters emitted at a set interval.
+pub struct Ticks<'a> {
+    /// All characters to cycle through.
+    all_chars: &'a str,
+    /// Iterator over the current cycle.
+    chars: std::str::Chars<'a>,
+    /// Timer driving the interval.
+    timer: async_io::Timer,
+}
+
+impl Stream for Ticks<'_> {
+    type Item = char;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<char>> {
+        let this = self.get_mut();
+
+        // Wait for the next timer tick.
+        match Pin::new(&mut this.timer).poll_next(cx) {
+            Poll::Ready(Some(_)) => {}
+            Poll::Ready(None) => return Poll::Ready(None),
+            Poll::Pending => return Poll::Pending,
+        }
+
+        // Get the next character, cycling back to the start when exhausted.
+        let ch = match this.chars.next() {
+            Some(ch) => ch,
+            None => {
+                this.chars = this.all_chars.chars();
+                this.chars.next().expect("non-empty spinner chars")
+            }
+        };
+
+        Poll::Ready(Some(ch))
+    }
 }
 
 /// A spinner that emits a character at a set interval.
@@ -57,11 +95,12 @@ impl<'a> Spinner<'a> {
     }
 
     /// Return a stream of characters at the set interval.
-    pub fn ticks(&self) -> impl Stream<Item = char> + use<'a> {
-        stream::iter(self.chars.chars())
-            .cycle()
-            .zip(async_io::Timer::interval(self.interval))
-            .map(|(spinner, _)| spinner)
+    pub fn ticks(&self) -> Ticks<'a> {
+        Ticks {
+            all_chars: self.chars,
+            chars: self.chars.chars(),
+            timer: async_io::Timer::interval(self.interval),
+        }
     }
 }
 
@@ -71,7 +110,7 @@ mod tests {
 
     use super::*;
 
-    use futures_lite::future;
+    use futures_lite::{StreamExt, future};
 
     #[test]
     fn spinner() {

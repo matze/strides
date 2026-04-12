@@ -10,6 +10,8 @@ pub struct ProgressStyle<'a> {
     pub(crate) spinner: Spinner<'a>,
     /// Bar style to indicate progress.
     pub(crate) bar: Bar<'a>,
+    /// Width of the progress bar in characters.
+    pub(crate) bar_width: Option<usize>,
 }
 
 impl<'a> ProgressStyle<'a> {
@@ -17,6 +19,7 @@ impl<'a> ProgressStyle<'a> {
         Self {
             spinner: Spinner::inactive(),
             bar: Bar::default(),
+            bar_width: None,
         }
     }
 
@@ -28,6 +31,19 @@ impl<'a> ProgressStyle<'a> {
     pub fn with_bar(mut self, bar: Bar<'a>) -> Self {
         self.bar = bar;
         self
+    }
+
+    pub fn with_bar_width(mut self, width: usize) -> Self {
+        self.bar_width = Some(width);
+        self
+    }
+
+    pub(crate) fn effective_bar_width(&self) -> usize {
+        self.bar_width.unwrap_or_else(|| {
+            terminal_size::terminal_size()
+                .map(|(w, _)| (w.0 as usize).saturating_sub(20).clamp(10, 80))
+                .unwrap_or(40)
+        })
     }
 }
 

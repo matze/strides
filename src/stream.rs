@@ -18,6 +18,8 @@ pub struct Progress<'a, S, F, T, M> {
     inner: S,
     /// Progress bar style
     bar: Bar<'a>,
+    /// Width of the progress bar in characters.
+    bar_width: usize,
     /// Closure to compute the progress.
     progress_fn: F,
     /// Spinner tick stream.
@@ -74,7 +76,7 @@ where
 
                 let completed = (this.progress_fn)(this.current, &item);
 
-                print!("{}", this.bar.render(40, completed));
+                print!("{}", this.bar.render(this.bar_width, completed));
 
                 if let Some(message) = &this.message {
                     print!(" {message}");
@@ -110,13 +112,14 @@ pub trait StreamExt<'a, F>: Stream {
         Self: Sized,
         F: FnMut(usize, &Self::Item) -> f64 + Unpin,
     {
-        let ProgressStyle { bar, spinner } = progress;
+        let bar_width = progress.effective_bar_width();
 
         Progress {
             inner: self,
             progress_fn,
-            bar,
-            ticks: spinner.ticks(),
+            bar: progress.bar,
+            bar_width,
+            ticks: progress.spinner.ticks(),
             messages: stream::pending::<&'static str>(),
             current: 0,
             spinner: None,
@@ -134,13 +137,14 @@ pub trait StreamExt<'a, F>: Stream {
         Self: Sized,
         F: FnMut(usize, &Self::Item) -> f64 + Unpin,
     {
-        let ProgressStyle { bar, spinner } = progress;
+        let bar_width = progress.effective_bar_width();
 
         Progress {
             inner: self,
             progress_fn,
-            bar,
-            ticks: spinner.ticks(),
+            bar: progress.bar,
+            bar_width,
+            ticks: progress.spinner.ticks(),
             messages,
             current: 0,
             spinner: None,

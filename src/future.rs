@@ -26,6 +26,8 @@ pub struct Progress<'a, F, T, M> {
     messages: M,
     /// Progress bar style.
     bar: Bar<'a>,
+    /// Width of the progress bar in characters.
+    bar_width: usize,
     /// Current annotation for the future.
     message: Option<String>,
     /// Current spinner character.
@@ -64,6 +66,12 @@ where
                 print!("{spinner} ");
             }
 
+            let bar = this.bar.render(this.bar_width, 0.0);
+
+            if !bar.is_empty() {
+                print!("{bar} ");
+            }
+
             if let Some(message) = &this.message {
                 print!("{message}");
             }
@@ -84,12 +92,14 @@ pub trait FutureExt: Future {
         Self: Sized,
     {
         let style = style.into();
+        let bar_width = style.effective_bar_width();
 
         Progress {
             inner: self,
             ticks: style.spinner.ticks(),
             messages: stream::pending::<&'static str>(),
             bar: style.bar,
+            bar_width,
             message: Some(message.to_string()),
             spinner: None,
         }
@@ -104,12 +114,14 @@ pub trait FutureExt: Future {
         Self: Sized,
     {
         let style = style.into();
+        let bar_width = style.effective_bar_width();
 
         Progress {
             inner: self,
             ticks: style.spinner.ticks(),
             messages,
             bar: style.bar,
+            bar_width,
             message: None,
             spinner: None,
         }

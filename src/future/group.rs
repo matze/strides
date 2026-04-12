@@ -99,6 +99,8 @@ pub struct Group<'a, F> {
     with_elapsed_time: bool,
     /// Time when the stream was first awaited.
     start: Option<Instant>,
+    /// Whether the display needs to be redrawn.
+    dirty: bool,
 }
 
 impl<'a, F> Group<'a, F>
@@ -115,6 +117,7 @@ where
             spinner_style: owo_colors::Style::new(),
             with_elapsed_time: false,
             start: None,
+            dirty: true,
         }
     }
 
@@ -180,65 +183,73 @@ where
         // Poll the spinner stream.
         if let Poll::Ready(spinner) = ticks.poll_next(cx) {
             this.spinner = spinner;
+            this.dirty = true;
         }
 
         // Poll per-task message streams.
         for task in this.tasks.iter_mut().flatten() {
             if let Poll::Ready(Some(msg)) = Pin::new(&mut task.messages).poll_next(cx) {
                 task.message = Some(msg);
-            }
-        }
-
-        let mut stdout = std::io::stdout();
-        let _ = stdout.queue(cursor::Hide);
-
-        for task in &this.tasks {
-            let _ = clear_line(&mut stdout);
-
-            if let Some(spinner) = &this.spinner {
-                print!("{} ", spinner.style(this.spinner_style));
-            }
-
-            if this.with_elapsed_time {
-                print!("[{:.2}s] ", elapsed.as_secs_f64());
-            }
-
-            if let Some(task) = task {
-                let prefix = task.prefix.style(this.annotation_style);
-
-                if let Some(message) = &task.message {
-                    println!("{prefix} {message}");
-                } else {
-                    println!("{prefix}");
-                }
+                this.dirty = true;
             }
         }
 
         let item = match inner.poll_next(cx) {
             Poll::Ready(Some((output, id))) => {
                 this.tasks[id] = None;
-
-                // Clear last and go up one line because we have one less future to track.
-                let _ = remove_last_line(&mut stdout);
+                this.dirty = true;
                 Poll::Ready(Some(output))
             }
             Poll::Ready(None) => {
+                let mut stdout = std::io::stdout();
                 let _ = reset(&mut stdout);
+                let _ = stdout.flush();
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
         };
 
-        if !matches!(item, Poll::Ready(None)) {
+        if this.dirty && !matches!(item, Poll::Ready(None)) {
+            this.dirty = false;
+
+            let mut stdout = std::io::stdout();
+            let _ = stdout.queue(cursor::Hide);
+
+            for task in &this.tasks {
+                let _ = clear_line(&mut stdout);
+
+                if let Some(spinner) = &this.spinner {
+                    print!("{} ", spinner.style(this.spinner_style));
+                }
+
+                if this.with_elapsed_time {
+                    print!("[{:.2}s] ", elapsed.as_secs_f64());
+                }
+
+                if let Some(task) = task {
+                    let prefix = task.prefix.style(this.annotation_style);
+
+                    if let Some(message) = &task.message {
+                        println!("{prefix} {message}");
+                    } else {
+                        println!("{prefix}");
+                    }
+                }
+            }
+
+            if matches!(item, Poll::Ready(Some(_))) {
+                let _ = remove_last_line(&mut stdout);
+            }
+
             // Go up by number of active futures to overwrite them on the next iteration.
             let active_futures = this.tasks.iter().filter(|t| t.is_some()).count();
 
             if active_futures > 0 {
                 let _ = stdout.queue(cursor::MoveUp(active_futures as u16));
             }
-        }
 
-        let _ = stdout.flush();
+            let _ = stdout.flush();
+        }
 
         item
     }

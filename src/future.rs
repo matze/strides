@@ -32,6 +32,8 @@ pub struct Progress<'a, F, T, M> {
     message: Option<String>,
     /// Current spinner character.
     spinner: Option<char>,
+    /// Whether the display needs to be redrawn.
+    dirty: bool,
 }
 
 impl<F, T, M, D> Future for Progress<'_, F, T, M>
@@ -49,35 +51,46 @@ where
 
         if let Poll::Ready(spinner) = ticks.poll_next(cx) {
             this.spinner = spinner;
+            this.dirty = true;
         }
 
         let messages = Pin::new(&mut this.messages);
 
         if let Poll::Ready(Some(message)) = messages.poll_next(cx) {
             this.message = Some(message.to_string());
+            this.dirty = true;
         }
-
-        let _ = clear_line(&mut std::io::stdout());
 
         let item = this.inner.poll(cx);
 
-        if matches!(item, Poll::Pending) {
-            if let Some(spinner) = &this.spinner {
-                print!("{spinner} ");
-            }
+        match item {
+            Poll::Pending if this.dirty => {
+                this.dirty = false;
+                let _ = clear_line(&mut std::io::stdout());
 
-            let bar = this.bar.render(this.bar_width, 0.0);
+                if let Some(spinner) = &this.spinner {
+                    print!("{spinner} ");
+                }
 
-            if !bar.is_empty() {
-                print!("{bar} ");
-            }
+                let bar = this.bar.render(this.bar_width, 0.0);
 
-            if let Some(message) = &this.message {
-                print!("{message}");
+                if !bar.is_empty() {
+                    print!("{bar} ");
+                }
+
+                if let Some(message) = &this.message {
+                    print!("{message}");
+                }
+
+                std::io::stdout().flush().expect("flushing");
             }
+            Poll::Ready(_) => {
+                let _ = clear_line(&mut std::io::stdout());
+                std::io::stdout().flush().expect("flushing");
+            }
+            _ => {}
         }
 
-        std::io::stdout().flush().expect("flushing");
         item
     }
 }
@@ -127,6 +140,7 @@ pub trait FutureExt: Future {
             bar_width,
             message: Some(message.to_string()),
             spinner: None,
+            dirty: true,
         }
     }
 
@@ -169,6 +183,7 @@ pub trait FutureExt: Future {
             bar_width,
             message: None,
             spinner: None,
+            dirty: true,
         }
     }
 }

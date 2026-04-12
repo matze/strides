@@ -96,7 +96,37 @@ where
     }
 }
 
+/// Extension trait that adds progress display to streams.
+///
+/// Each time the wrapped stream yields an item, a spinner, progress bar and optional message are
+/// rendered to stdout. The line is cleared when the stream ends.
+///
+/// Import this trait and call [`progress()`](StreamExt::progress) or
+/// [`progress_with_messages()`](StreamExt::progress_with_messages) on any
+/// stream.
 pub trait StreamExt<'a, F>: Stream {
+    /// Display a progress bar while consuming this stream.
+    ///
+    /// `progress_fn` is called for every item and must return a value between `0.0` (no progress)
+    /// and `1.0` (complete). It receives the monotonically increasing item index (starting at 1)
+    /// and a reference to the item, so progress can be derived from either the count or the item
+    /// content.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use futures_lite::StreamExt as _;
+    /// use strides::stream::StreamExt;
+    /// use strides::spinner::styles::DOTS_3;
+    ///
+    /// # futures_lite::future::block_on(async {
+    /// let total = 100;
+    /// futures_lite::stream::iter(0..total)
+    ///     .progress(DOTS_3.into(), move |i, _| i as f64 / total as f64)
+    ///     .count()
+    ///     .await;
+    /// # });
+    /// ```
     fn progress(
         self,
         progress: ProgressStyle<'a>,
@@ -127,6 +157,12 @@ pub trait StreamExt<'a, F>: Stream {
         }
     }
 
+    /// Display a progress bar with dynamically changing messages while consuming this stream.
+    ///
+    /// Works like [`progress()`](StreamExt::progress) but takes an additional `messages` stream.
+    /// Each time a new message arrives it replaces the text shown after the progress bar. If the
+    /// message stream is exhausted before the wrapped stream completes, the last message remains
+    /// visible.
     fn progress_with_messages(
         self,
         progress: ProgressStyle<'a>,

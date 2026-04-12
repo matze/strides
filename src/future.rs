@@ -82,7 +82,32 @@ where
     }
 }
 
+/// Extension trait that adds progress display to futures.
+///
+/// While the future is pending, a spinner, optional progress bar and message are rendered to
+/// stdout. The line is cleared once the future resolves.
+///
+/// Import this trait and call [`progress()`](FutureExt::progress) or
+/// [`progress_with_messages()`](FutureExt::progress_with_messages) on any pinned future.
 pub trait FutureExt: Future {
+    /// Display a spinner and a static message while this future is pending.
+    ///
+    /// `style` accepts a [`ProgressStyle`] or a bare [`Spinner`](crate::spinner::Spinner)
+    /// (converted via `Into`).  When the style includes a bar it is rendered between the spinner
+    /// and the message.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use strides::future::FutureExt;
+    /// use strides::spinner::styles::DOTS_3;
+    ///
+    /// # futures_lite::future::block_on(async {
+    /// let result = std::pin::pin!(async { 42 })
+    ///     .progress(DOTS_3, "computing …")
+    ///     .await;
+    /// # });
+    /// ```
     fn progress<'a>(
         self,
         style: impl Into<ProgressStyle<'a>>,
@@ -105,6 +130,26 @@ pub trait FutureExt: Future {
         }
     }
 
+    /// Display a spinner with dynamically changing messages while this future is pending.
+    ///
+    /// `messages` is a stream of displayable values. Each time a new value arrives it replaces the
+    /// currently shown message. If the message stream is exhausted before the future completes, the
+    /// last message remains visible.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use futures_lite::stream;
+    /// use strides::future::FutureExt;
+    /// use strides::spinner::styles::DOTS_3;
+    ///
+    /// # futures_lite::future::block_on(async {
+    /// let messages = stream::iter(["connecting …", "fetching …", "done"]);
+    /// let result = std::pin::pin!(async { 42 })
+    ///     .progress_with_messages(DOTS_3, messages)
+    ///     .await;
+    /// # });
+    /// ```
     fn progress_with_messages<'a>(
         self,
         style: impl Into<ProgressStyle<'a>>,

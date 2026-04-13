@@ -1,10 +1,12 @@
 //! Spinner UI element.
 
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures_lite::Stream;
+use futures_timer::Delay;
 
 /// Pre-defined spinner styles.
 pub mod styles {
@@ -56,8 +58,10 @@ pub struct Ticks<'a> {
     all_chars: &'a str,
     /// Iterator over the current cycle.
     chars: std::str::Chars<'a>,
-    /// Timer driving the interval.
-    timer: async_io::Timer,
+    /// One-shot delay that is reset after each tick.
+    delay: Delay,
+    /// Interval between ticks.
+    interval: Duration,
 }
 
 impl Stream for Ticks<'_> {
@@ -66,10 +70,11 @@ impl Stream for Ticks<'_> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<char>> {
         let this = self.get_mut();
 
-        // Wait for the next timer tick.
-        match Pin::new(&mut this.timer).poll_next(cx) {
-            Poll::Ready(Some(_)) => {}
-            Poll::Ready(None) => return Poll::Ready(None),
+        // Wait for the current delay to expire.
+        match Pin::new(&mut this.delay).poll(cx) {
+            Poll::Ready(()) => {
+                this.delay.reset(this.interval);
+            }
             Poll::Pending => return Poll::Pending,
         }
 
@@ -123,7 +128,8 @@ impl<'a> Spinner<'a> {
         Ticks {
             all_chars: self.chars,
             chars: self.chars.chars(),
-            timer: async_io::Timer::interval(self.interval),
+            delay: Delay::new(self.interval),
+            interval: self.interval,
         }
     }
 }

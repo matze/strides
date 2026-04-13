@@ -69,7 +69,7 @@
 //! # futures_lite::future::block_on(async {
 //! std::pin::pin!(async {
 //!    // Simulate work by waiting for three seconds.
-//!    async_io::Timer::after(Duration::from_secs(3)).await;
+//!    futures_timer::Delay::new(Duration::from_secs(3)).await;
 //! })
 //! .progress(DOTS_3, "this will take some time")
 //! .await;

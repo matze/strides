@@ -101,6 +101,9 @@ pub struct Group<'a, F> {
     start: Option<Instant>,
     /// Whether the display needs to be redrawn.
     dirty: bool,
+    /// Number of lines printed by the previous render, used to clear leftovers
+    /// when the active count shrinks.
+    rendered_lines: usize,
 }
 
 impl<'a, F> Group<'a, F>
@@ -118,6 +121,7 @@ where
             with_elapsed_time: false,
             start: None,
             dirty: true,
+            rendered_lines: 0,
         }
     }
 
@@ -215,7 +219,9 @@ where
             let mut stdout = std::io::stdout();
             let _ = stdout.queue(cursor::Hide);
 
-            for task in &this.tasks {
+            let active_count = this.tasks.iter().filter(|t| t.is_some()).count();
+
+            for task in this.tasks.iter().flatten() {
                 let _ = clear_line(&mut stdout);
 
                 if let Some(spinner) = &this.spinner {
@@ -226,26 +232,30 @@ where
                     print!("[{:.2}s] ", elapsed.as_secs_f64());
                 }
 
-                if let Some(task) = task {
-                    let prefix = task.prefix.style(this.annotation_style);
+                let prefix = task.prefix.style(this.annotation_style);
 
-                    if let Some(message) = &task.message {
-                        println!("{prefix} {message}");
-                    } else {
-                        println!("{prefix}");
-                    }
+                if let Some(message) = &task.message {
+                    println!("{prefix} {message}");
+                } else {
+                    println!("{prefix}");
                 }
             }
 
-            if matches!(item, Poll::Ready(Some(_))) {
-                let _ = remove_last_line(&mut stdout);
+            // The previous render may have drawn more lines than we just did. Clear
+            // those leftovers so completed tasks do not linger as stray output.
+            let stale_lines = this.rendered_lines.saturating_sub(active_count);
+
+            for _ in 0..stale_lines {
+                let _ = clear_line(&mut stdout);
+                println!();
             }
 
-            // Go up by number of active futures to overwrite them on the next iteration.
-            let active_futures = this.tasks.iter().filter(|t| t.is_some()).count();
+            this.rendered_lines = active_count;
 
-            if active_futures > 0 {
-                let _ = stdout.queue(cursor::MoveUp(active_futures as u16));
+            let total_advanced = active_count + stale_lines;
+
+            if total_advanced > 0 {
+                let _ = stdout.queue(cursor::MoveUp(total_advanced as u16));
             }
 
             let _ = stdout.flush();
@@ -253,15 +263,6 @@ where
 
         item
     }
-}
-
-fn remove_last_line(stdout: &mut std::io::Stdout) -> std::io::Result<()> {
-    stdout
-        .queue(terminal::Clear(terminal::ClearType::CurrentLine))?
-        .queue(cursor::MoveUp(1))?
-        .queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
-
-    Ok(())
 }
 
 fn reset(stdout: &mut std::io::Stdout) -> std::io::Result<()> {

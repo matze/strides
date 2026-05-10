@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+## 0.2.0
+
 ### Breaking changes
 
 - Renamed `future::Monitored` to `future::Group`.

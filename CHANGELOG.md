@@ -5,6 +5,9 @@
 ### Breaking changes
 
 - Replace `ProgressStyle::new()` with `Default` implementation.
+- `future::Group::new()` now accepts `impl Into<ProgressStyle>` instead
+  of a bare `Spinner`. Existing call sites continue to compile thanks
+  to the `From<Spinner>` impl.
 
 
 ## 0.2.0

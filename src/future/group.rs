@@ -8,7 +8,8 @@ use futures::stream::FuturesUnordered;
 use futures_lite::{FutureExt as _, Stream, stream};
 use owo_colors::OwoColorize;
 
-use crate::spinner::{Spinner, Ticks};
+use crate::spinner::Ticks;
+use crate::style::ProgressStyle;
 use crate::term::clear_line;
 
 /// Helper future that allows us to track the completion status of the wrapped future F.
@@ -110,10 +111,16 @@ impl<'a, F> Group<'a, F>
 where
     F: Future,
 {
-    pub fn new(spinner: Spinner<'a>) -> Self {
+    /// Create a new group with the given progress style.
+    ///
+    /// Accepts a [`ProgressStyle`] or a bare [`Spinner`](crate::spinner::Spinner) (converted via
+    /// `Into`).
+    pub fn new<S: Into<ProgressStyle<'a>>>(style: S) -> Self {
+        let style = style.into();
+
         Self {
             inner: FuturesUnordered::new(),
-            ticks: spinner.ticks(),
+            ticks: style.spinner.ticks(),
             tasks: Vec::new(),
             annotation_style: owo_colors::Style::new(),
             spinner: None,

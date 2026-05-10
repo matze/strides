@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- Renamed `future::Monitored` to `future::Group`.
+
+### Changed
+
+- Allow `future::Group` to assign dynamic messages.
+- Avoid overdraw via dirty-tracking.
+- Use `futures-timer` instead of `async-io` timer.
+
+### Fixed
+
+- Stale last line spinner in a `future::Monitored`.
+
 
 ## 0.1.0
 

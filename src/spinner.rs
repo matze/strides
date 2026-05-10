@@ -74,6 +74,7 @@ impl Stream for Ticks<'_> {
         match Pin::new(&mut this.delay).poll(cx) {
             Poll::Ready(()) => {
                 this.delay.reset(this.interval);
+                let _ = Pin::new(&mut this.delay).poll(cx);
             }
             Poll::Pending => return Poll::Pending,
         }

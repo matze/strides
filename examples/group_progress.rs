@@ -1,12 +1,14 @@
 use std::time::{Duration, Instant};
 
 use async_io::Timer;
+use async_signal::{Signal, Signals};
 use futures::SinkExt;
 use futures::channel::mpsc;
+use futures_concurrency::future::Race as _;
 use futures_lite::{StreamExt, future};
 use strides::future::Group;
 use strides::style::ProgressStyle;
-use strides::{bar, spinner};
+use strides::{bar, spinner, term};
 
 fn main() {
     let bar = bar::styles::THIN_LINE
@@ -42,7 +44,18 @@ fn main() {
         group.push_with_progress(Box::pin(work), label.into(), rx);
     }
 
+    let mut signals = Signals::new([Signal::Int]).expect("signal handler");
+
     future::block_on(async {
-        group.for_each(|_| {}).await;
+        let work = async {
+            group.for_each(|_| {}).await;
+        };
+
+        let on_interrupt = async {
+            let _ = signals.next().await;
+            let _ = term::reset();
+        };
+
+        (work, on_interrupt).race().await;
     });
 }

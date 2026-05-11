@@ -1,8 +1,10 @@
 use std::time::{Duration, Instant};
 
+use async_signal::{Signal, Signals};
+use futures_concurrency::future::Race as _;
 use futures_lite::{Stream, StreamExt as _, future, stream};
 use strides::future::FutureExt;
-use strides::spinner;
+use strides::{spinner, term};
 
 fn throttle<I>(s: impl Stream<Item = I>, interval: Duration) -> impl Stream<Item = I> {
     s.zip(async_io::Timer::interval_at(Instant::now(), interval))
@@ -16,15 +18,26 @@ fn main() {
         Duration::from_secs(1),
     );
 
-    future::block_on(async {
-        // Await a long-running future with dynamic status messages.
-        std::pin::pin!(async {
-            async_io::Timer::after(Duration::from_secs(5)).await;
-            42
-        })
-        .progress_with_messages(spinner::styles::SAND, messages)
-        .await;
+    let mut signals = Signals::new([Signal::Int]).expect("signal handler");
 
-        println!("Done!");
+    future::block_on(async {
+        let work = async {
+            // Await a long-running future with dynamic status messages.
+            std::pin::pin!(async {
+                async_io::Timer::after(Duration::from_secs(5)).await;
+                42
+            })
+            .progress_with_messages(spinner::styles::SAND, messages)
+            .await;
+
+            println!("Done!");
+        };
+
+        let on_interrupt = async {
+            let _ = signals.next().await;
+            let _ = term::reset();
+        };
+
+        (work, on_interrupt).race().await;
     });
 }

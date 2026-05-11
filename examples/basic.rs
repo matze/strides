@@ -1,10 +1,12 @@
 use std::time::Duration;
 use std::time::Instant;
 
+use async_signal::{Signal, Signals};
+use futures_concurrency::future::Race as _;
 use futures_lite::StreamExt as _;
 use futures_lite::{Stream, future, stream};
 use strides::stream::{ProgressStyle, StreamExt};
-use strides::{bar, spinner};
+use strides::{bar, spinner, term};
 
 fn throttle<I>(s: impl Stream<Item = I>, interval: Duration) -> impl Stream<Item = I> {
     s.zip(async_io::Timer::interval_at(Instant::now(), interval))
@@ -27,13 +29,23 @@ fn main() {
         .with_bar(bar::styles::PARALLELOGRAM)
         .with_spinner(spinner::styles::SAND);
 
-    future::block_on(async {
-        // Process the stream.
-        let sum = ticks
-            .progress_with_messages(progress, |index, _| index as f64 / 100.0, messages)
-            .fold(0, |acc, x| acc + x)
-            .await;
+    let mut signals = Signals::new([Signal::Int]).expect("signal handler");
 
-        println!("Sum is {sum}, Gauss was right");
+    future::block_on(async {
+        let work = async {
+            let sum = ticks
+                .progress_with_messages(progress, |index, _| index as f64 / 100.0, messages)
+                .fold(0, |acc, x| acc + x)
+                .await;
+
+            println!("Sum is {sum}, Gauss was right");
+        };
+
+        let on_interrupt = async {
+            let _ = signals.next().await;
+            let _ = term::reset();
+        };
+
+        (work, on_interrupt).race().await;
     });
 }

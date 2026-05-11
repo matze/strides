@@ -1,8 +1,10 @@
 use anyhow::anyhow;
+use async_signal::{Signal, Signals};
 use clap::Parser;
 use futures::{StreamExt as _, TryStreamExt};
+use futures_concurrency::future::Race as _;
 use strides::stream::{ProgressStyle, StreamExt as _};
-use strides::{bar, spinner};
+use strides::{bar, spinner, term};
 use tokio_util::codec::{BytesCodec, FramedWrite};
 
 #[derive(Parser, Debug)]
@@ -47,7 +49,15 @@ async fn main() -> anyhow::Result<()> {
     let file = tokio::fs::File::create_new(name).await?;
     let writer = FramedWrite::new(file, BytesCodec::new());
 
-    stream.forward(writer).await?;
+    let mut signals = Signals::new([Signal::Int])?;
 
-    Ok(())
+    let work = async { stream.forward(writer).await.map_err(anyhow::Error::from) };
+
+    let on_interrupt = async {
+        let _ = signals.next().await;
+        let _ = term::reset();
+        Ok(())
+    };
+
+    (work, on_interrupt).race().await
 }

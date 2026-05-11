@@ -13,6 +13,7 @@
 
 - Added `Bar::with_filled_style()` and `Bar::with_empty_style()` to style the
   bar elements.
+- Additional `Bar` styles.
 
 
 ## 0.2.0

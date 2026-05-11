@@ -8,7 +8,19 @@ pub mod styles {
 
     pub const SHADED: Bar = Bar::new('░', '█');
 
+    pub const MEDIUM_SHADED: Bar = Bar::new('░', '▒');
+
+    pub const HEAVY_SHADED: Bar = Bar::new('▒', '▓');
+
     pub const DOTTED: Bar = Bar::new('⣀', '⣿');
+
+    pub const THIN_LINE: Bar = Bar::new('─', '━');
+
+    pub const TRIPLE_DASH: Bar = Bar::new('┄', '┅');
+
+    pub const MID_DOTS: Bar = Bar::new('·', '•');
+
+    pub const EQUALS: Bar = Bar::new('╌', '═');
 }
 
 /// Progress bar style characters.

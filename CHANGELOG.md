@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+## 0.3.0
+
 ### Breaking changes
 
 - Replace `ProgressStyle::new()` with `Default` implementation.

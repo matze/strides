@@ -9,6 +9,10 @@
   of a bare `Spinner`. Existing call sites continue to compile thanks
   to the `From<Spinner>` impl.
 
+### Changes
+
+- Pull in `futures-util` instead of all of `futures`.
+
 ### Added
 
 - Added `Bar::with_filled_style()` and `Bar::with_empty_style()` to style the

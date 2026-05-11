@@ -4,8 +4,8 @@ use std::time::Instant;
 use std::{io::Write, pin::Pin};
 
 use crossterm::{QueueableCommand, cursor};
-use futures::stream::FuturesUnordered;
 use futures_lite::{FutureExt as _, Stream, stream};
+use futures_util::stream::FuturesUnordered;
 use owo_colors::OwoColorize;
 
 use crate::bar::Bar;
@@ -325,4 +325,3 @@ where
         item
     }
 }
-

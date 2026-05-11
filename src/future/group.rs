@@ -8,6 +8,7 @@ use futures::stream::FuturesUnordered;
 use futures_lite::{FutureExt as _, Stream, stream};
 use owo_colors::OwoColorize;
 
+use crate::bar::Bar;
 use crate::spinner::Ticks;
 use crate::style::ProgressStyle;
 use crate::term::clear_line;
@@ -47,7 +48,8 @@ where
     }
 }
 
-/// Per-task state tracking prefix, current message, and an optional messages stream.
+/// Per-task state tracking prefix, current message, optional progress, and the streams that update
+/// them.
 struct Task<'a> {
     /// Static prefix/label shown before the message.
     prefix: String,
@@ -55,16 +57,20 @@ struct Task<'a> {
     message: Option<String>,
     /// Stream of dynamic messages.
     messages: Box<dyn Stream<Item = String> + Unpin + 'a>,
+    /// Current progress fraction in `0.0..=1.0`. `None` disables the bar for this task.
+    progress: Option<f64>,
+    /// Stream of progress updates.
+    progress_stream: Box<dyn Stream<Item = f64> + Unpin + 'a>,
 }
 
 /// A group of futures displayed as multi-line progress with per-task annotations.
 ///
-/// Each future in the group occupies its own terminal line showing a spinner and a message. Lines
-/// are removed as futures complete.
+/// Each future in the group occupies its own terminal line showing a spinner, optional progress
+/// bar and a message. Lines are removed as futures complete.
 ///
-/// Use [`push()`](Group::push) for static annotations or
-/// [`push_with_messages()`](Group::push_with_messages) for messages that update dynamically while
-/// the future runs.
+/// Use [`push()`](Group::push) for static annotations,
+/// [`push_with_messages()`](Group::push_with_messages) for messages that update dynamically, or
+/// [`push_with_progress()`](Group::push_with_progress) to also render a per-task progress bar.
 ///
 /// `Group` implements [`Stream`], each time a future completes, the stream yields its output.
 ///
@@ -96,6 +102,11 @@ pub struct Group<'a, F> {
     spinner: Option<char>,
     /// Spinner style.
     spinner_style: owo_colors::Style,
+    /// Bar style used for tasks pushed via
+    /// [`push_with_progress()`](Group::push_with_progress).
+    bar: Bar<'a>,
+    /// Width of the progress bar in characters.
+    bar_width: usize,
     /// `true` if elapsed time should be shown for each future.
     with_elapsed_time: bool,
     /// Time when the stream was first awaited.
@@ -114,9 +125,11 @@ where
     /// Create a new group with the given progress style.
     ///
     /// Accepts a [`ProgressStyle`] or a bare [`Spinner`](crate::spinner::Spinner) (converted via
-    /// `Into`).
+    /// `Into`). When the style includes a [`Bar`] it is used to render per-task progress for
+    /// futures pushed via [`push_with_progress()`](Group::push_with_progress).
     pub fn new<S: Into<ProgressStyle<'a>>>(style: S) -> Self {
         let style = style.into();
+        let bar_width = style.effective_bar_width();
 
         Self {
             inner: FuturesUnordered::new(),
@@ -125,6 +138,8 @@ where
             annotation_style: owo_colors::Style::new(),
             spinner: None,
             spinner_style: owo_colors::Style::new(),
+            bar: style.bar,
+            bar_width,
             with_elapsed_time: false,
             start: None,
             dirty: true,
@@ -154,6 +169,8 @@ where
             prefix: annotation,
             message: None,
             messages: Box::new(stream::pending()),
+            progress: None,
+            progress_stream: Box::new(stream::pending()),
         }));
         self.inner.push(Annotated::new(fut, id));
     }
@@ -174,6 +191,31 @@ where
             prefix,
             message: None,
             messages: Box::new(messages),
+            progress: None,
+            progress_stream: Box::new(stream::pending()),
+        }));
+        self.inner.push(Annotated::new(fut, id));
+    }
+
+    /// Add `fut` to the group with a static prefix and a stream of progress updates.
+    ///
+    /// Each value yielded by `progress` is interpreted as a fraction in `0.0..=1.0` and rendered
+    /// as a per-task bar between the spinner and the prefix. The latest value wins, so emitting
+    /// at a high rate is fine. The bar's style and width are taken from the [`ProgressStyle`]
+    /// passed to [`Group::new()`].
+    pub fn push_with_progress(
+        &mut self,
+        fut: F,
+        prefix: String,
+        progress: impl Stream<Item = f64> + Unpin + 'a,
+    ) {
+        let id = self.tasks.len();
+        self.tasks.push(Some(Task {
+            prefix,
+            message: None,
+            messages: Box::new(stream::pending()),
+            progress: None,
+            progress_stream: Box::new(progress),
         }));
         self.inner.push(Annotated::new(fut, id));
     }
@@ -197,10 +239,16 @@ where
             this.dirty = true;
         }
 
-        // Poll per-task message streams.
+        // Poll per-task message and progress streams. Drain the progress stream so the bar
+        // always reflects the latest value rather than lagging behind queued updates.
         for task in this.tasks.iter_mut().flatten() {
             if let Poll::Ready(Some(msg)) = Pin::new(&mut task.messages).poll_next(cx) {
                 task.message = Some(msg);
+                this.dirty = true;
+            }
+
+            while let Poll::Ready(Some(p)) = Pin::new(&mut task.progress_stream).poll_next(cx) {
+                task.progress = Some(p.clamp(0.0, 1.0));
                 this.dirty = true;
             }
         }
@@ -237,6 +285,14 @@ where
 
                 if this.with_elapsed_time {
                     print!("[{:.2}s] ", elapsed.as_secs_f64());
+                }
+
+                if let Some(progress) = task.progress {
+                    let bar = this.bar.render(this.bar_width, progress);
+
+                    if !bar.is_empty() {
+                        print!("{bar} ");
+                    }
                 }
 
                 let prefix = task.prefix.style(this.annotation_style);

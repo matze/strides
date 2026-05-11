@@ -14,6 +14,11 @@
 - Added `Bar::with_filled_style()` and `Bar::with_empty_style()` to style the
   bar elements.
 - Additional `Bar` styles.
+- `Bar::with_filled_style()` and `Bar::with_empty_style()` to style the bar
+  elements.
+- `future::Group::push_with_progress()` renders a per-task progress bar from a
+  `Stream<Item = f64>`. The bar style and width are taken from the
+  `ProgressStyle` passed to `Group::new()`.
 
 
 ## 0.2.0

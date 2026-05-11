@@ -15,7 +15,7 @@ fn main() {
         .with_filled_style(owo_colors::Style::new().bright_purple())
         .with_empty_style(owo_colors::Style::new().bright_black());
 
-    let style = ProgressStyle::new()
+    let style = ProgressStyle::default()
         .with_spinner(spinner::styles::DOTS_3)
         .with_bar(bar)
         .with_bar_width(20);

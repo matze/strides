@@ -1,3 +1,5 @@
+use owo_colors::OwoColorize;
+
 /// Pre-defined progress bar styles.
 pub mod styles {
     use super::Bar;
@@ -22,6 +24,10 @@ pub struct Bar<'a> {
     left_border: Option<&'a str>,
     /// Right border character
     right_border: Option<&'a str>,
+    /// Style applied to the filled portion of the bar.
+    filled_style: Option<owo_colors::Style>,
+    /// Style applied to the empty portion of the bar.
+    empty_style: Option<owo_colors::Style>,
 }
 
 impl<'a> Bar<'a> {
@@ -32,6 +38,8 @@ impl<'a> Bar<'a> {
             in_between: None,
             left_border: None,
             right_border: None,
+            filled_style: None,
+            empty_style: None,
         }
     }
 
@@ -49,6 +57,16 @@ impl<'a> Bar<'a> {
             .map(|c| std::iter::repeat_n(c, remaining).collect::<String>())
             .unwrap_or_default();
 
+        let complete = match self.filled_style {
+            Some(style) => complete.style(style).to_string(),
+            None => complete,
+        };
+
+        let remaining = match self.empty_style {
+            Some(style) => remaining.style(style).to_string(),
+            None => remaining,
+        };
+
         format!(
             "{}{complete}{}{remaining}{}",
             self.left_border.unwrap_or(""),
@@ -65,6 +83,18 @@ impl<'a> Bar<'a> {
     pub fn with_border(mut self, left: &'static str, right: &'static str) -> Self {
         self.left_border = Some(left);
         self.right_border = Some(right);
+        self
+    }
+
+    /// Style the filled portion of the bar.
+    pub fn with_filled_style(mut self, style: owo_colors::Style) -> Self {
+        self.filled_style = Some(style);
+        self
+    }
+
+    /// Style the empty portion of the bar.
+    pub fn with_empty_style(mut self, style: owo_colors::Style) -> Self {
+        self.empty_style = Some(style);
         self
     }
 }

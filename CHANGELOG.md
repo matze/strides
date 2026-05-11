@@ -9,6 +9,11 @@
   of a bare `Spinner`. Existing call sites continue to compile thanks
   to the `From<Spinner>` impl.
 
+### Added
+
+- Added `Bar::with_filled_style()` and `Bar::with_empty_style()` to style the
+  bar elements.
+
 
 ## 0.2.0
 

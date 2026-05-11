@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     let length = response.content_length().unwrap() as f64;
     let mut sum = 0;
 
-    let progress = ProgressStyle::new()
+    let progress = ProgressStyle::default()
         .with_bar(bar::styles::SHADED)
         .with_spinner(spinner::styles::DOTS_3);
 

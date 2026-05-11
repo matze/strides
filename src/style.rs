@@ -14,15 +14,17 @@ pub struct ProgressStyle<'a> {
     pub(crate) bar_width: Option<usize>,
 }
 
-impl<'a> ProgressStyle<'a> {
-    pub fn new() -> Self {
+impl<'a> Default for ProgressStyle<'a> {
+    fn default() -> Self {
         Self {
             spinner: Spinner::inactive(),
             bar: Bar::default(),
             bar_width: None,
         }
     }
+}
 
+impl<'a> ProgressStyle<'a> {
     pub fn with_spinner(mut self, spinner: Spinner<'a>) -> Self {
         self.spinner = spinner;
         self
@@ -49,6 +51,6 @@ impl<'a> ProgressStyle<'a> {
 
 impl<'a> From<Spinner<'a>> for ProgressStyle<'a> {
     fn from(spinner: Spinner<'a>) -> Self {
-        ProgressStyle::new().with_spinner(spinner)
+        ProgressStyle::default().with_spinner(spinner)
     }
 }

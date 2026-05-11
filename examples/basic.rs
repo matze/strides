@@ -23,7 +23,7 @@ fn main() {
 
     // Set up our progress with parallelogram bar and sand spinner. The stream gives no size
     // hint, thus we need to set the number of expected items manually.
-    let progress = ProgressStyle::new()
+    let progress = ProgressStyle::default()
         .with_bar(bar::styles::PARALLELOGRAM)
         .with_spinner(spinner::styles::SAND);
 

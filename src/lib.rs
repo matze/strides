@@ -81,5 +81,4 @@ pub mod future;
 pub mod spinner;
 pub mod stream;
 pub mod style;
-
-mod term;
+pub mod term;

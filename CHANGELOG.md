@@ -19,6 +19,7 @@
 - `future::Group::push_with_progress()` renders a per-task progress bar from a
   `Stream<Item = f64>`. The bar style and width are taken from the
   `ProgressStyle` passed to `Group::new()`.
+- `strides::term::reset()` to reset the output.
 
 
 ## 0.2.0

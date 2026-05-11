@@ -3,7 +3,7 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 use std::{io::Write, pin::Pin};
 
-use crossterm::{QueueableCommand, cursor, terminal};
+use crossterm::{QueueableCommand, cursor};
 use futures::stream::FuturesUnordered;
 use futures_lite::{FutureExt as _, Stream, stream};
 use owo_colors::OwoColorize;
@@ -11,7 +11,7 @@ use owo_colors::OwoColorize;
 use crate::bar::Bar;
 use crate::spinner::Ticks;
 use crate::style::ProgressStyle;
-use crate::term::clear_line;
+use crate::term::{clear_line, reset};
 
 /// Helper future that allows us to track the completion status of the wrapped future F.
 struct Annotated<F> {
@@ -260,9 +260,7 @@ where
                 Poll::Ready(Some(output))
             }
             Poll::Ready(None) => {
-                let mut stdout = std::io::stdout();
-                let _ = reset(&mut stdout);
-                let _ = stdout.flush();
+                let _ = reset();
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
@@ -328,11 +326,3 @@ where
     }
 }
 
-fn reset(stdout: &mut std::io::Stdout) -> std::io::Result<()> {
-    stdout
-        .queue(cursor::Show)?
-        .queue(terminal::Clear(terminal::ClearType::CurrentLine))?
-        .queue(cursor::MoveToColumn(0))?;
-
-    Ok(())
-}

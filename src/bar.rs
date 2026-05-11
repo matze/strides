@@ -41,13 +41,13 @@ impl<'a> Bar<'a> {
 
         let complete = self
             .complete
-            .map(|c| std::iter::repeat(c).take(completed).collect::<String>())
-            .unwrap_or(String::new());
+            .map(|c| std::iter::repeat_n(c, completed).collect::<String>())
+            .unwrap_or_default();
 
         let remaining = self
             .empty
-            .map(|c| std::iter::repeat(c).take(remaining).collect::<String>())
-            .unwrap_or(String::new());
+            .map(|c| std::iter::repeat_n(c, remaining).collect::<String>())
+            .unwrap_or_default();
 
         format!(
             "{}{complete}{}{remaining}{}",

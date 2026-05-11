@@ -182,7 +182,7 @@ where
         let this = self.get_mut();
         let inner = Pin::new(&mut this.inner);
         let ticks = Pin::new(&mut this.ticks);
-        let elapsed = this.start.get_or_insert_with(|| Instant::now()).elapsed();
+        let elapsed = this.start.get_or_insert_with(Instant::now).elapsed();
 
         // Poll the spinner stream.
         if let Poll::Ready(spinner) = ticks.poll_next(cx) {

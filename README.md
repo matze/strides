@@ -9,15 +9,13 @@ absolutely not API stable. Use at your own risk.
 
 The crate is built around two extension traits and one container:
 
-- [`future::FutureExt`] adds `.progress(theme)` to any [`Future`], returning a
-  builder that composes optional capabilities — `with_message`,
-  `with_messages` and `with_fraction`.
-- [`stream::StreamExt`] adds `.progress(theme, fraction_fn)` to any [`Stream`],
-  returning a builder with `with_messages`.
-- [`future::Group`] runs many futures concurrently and renders one line per
-  task. Bare futures convert into [`future::Task`] implicitly; configure with
-  `with_label`, `with_messages` and `with_progress` (mirrored on
-  `FutureExt`).
+[`future::FutureExt`] adds `.progress(theme)` to any [`Future`], returning a
+builder that composes optional capabilities `with_message`, `with_messages` and
+`with_fraction`. [`stream::StreamExt`] adds `.progress(theme, fraction_fn)` to
+any [`Stream`], returning a builder with `with_messages`. [`future::Group`] runs
+many futures concurrently and renders one line per task. Bare futures convert
+into [`future::Task`] implicitly; configure with `with_label`, `with_messages`
+and `with_progress` (mirrored on `FutureExt`).
 
 A [`Theme`] bundles a [`spinner::Spinner`] and a [`bar::Bar`] and is
 accepted everywhere a theme is expected; bare spinners convert

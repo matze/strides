@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
                 1.0
             }
         })
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err));
+        .map_err(std::io::Error::other);
 
     let file = tokio::fs::File::create_new(name).await?;
     let writer = FramedWrite::new(file, BytesCodec::new());

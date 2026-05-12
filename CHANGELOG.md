@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changes
+
+- Add back `ProgressStyle::new()` and `const`ify most constructor APIs.
+
 
 ## 0.3.0
 

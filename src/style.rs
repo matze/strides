@@ -16,26 +16,32 @@ pub struct ProgressStyle<'a> {
 
 impl<'a> Default for ProgressStyle<'a> {
     fn default() -> Self {
-        Self {
-            spinner: Spinner::inactive(),
-            bar: Bar::default(),
-            bar_width: None,
-        }
+        Self::new()
     }
 }
 
 impl<'a> ProgressStyle<'a> {
-    pub fn with_spinner(mut self, spinner: Spinner<'a>) -> Self {
+    /// Create a new progress style with an inactive spinner, no bar, and an
+    /// auto-detected bar width.
+    pub const fn new() -> Self {
+        Self {
+            spinner: Spinner::inactive(),
+            bar: Bar::empty(),
+            bar_width: None,
+        }
+    }
+
+    pub const fn with_spinner(mut self, spinner: Spinner<'a>) -> Self {
         self.spinner = spinner;
         self
     }
 
-    pub fn with_bar(mut self, bar: Bar<'a>) -> Self {
+    pub const fn with_bar(mut self, bar: Bar<'a>) -> Self {
         self.bar = bar;
         self
     }
 
-    pub fn with_bar_width(mut self, width: usize) -> Self {
+    pub const fn with_bar_width(mut self, width: usize) -> Self {
         self.bar_width = Some(width);
         self
     }

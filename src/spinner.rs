@@ -119,7 +119,7 @@ impl<'a> Spinner<'a> {
     }
 
     /// Set an animation interval different from the default.
-    pub fn with_interval(mut self, interval: Duration) -> Self {
+    pub const fn with_interval(mut self, interval: Duration) -> Self {
         self.interval = interval;
         self
     }

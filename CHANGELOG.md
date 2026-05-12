@@ -2,9 +2,15 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- Rename `style::ProgressStyle` to `Theme` and re-export it at the crate
+  root as `strides::Theme`. The `style` module is renamed to `theme`. The
+  legacy `stream::ProgressStyle` re-export is dropped.
+
 ### Changes
 
-- Add back `ProgressStyle::new()` and `const`ify most constructor APIs.
+- Add back `Theme::new()` and `const`ify most constructor APIs.
 
 
 ## 0.3.0

@@ -1,15 +1,15 @@
-//! Shared progress style configuration.
+//! Shared progress theme configuration.
 //!
-//! A [`ProgressStyle`] bundles a [`Spinner`] and a [`Bar`] together with an optional bar width
+//! A [`Theme`] bundles a [`Spinner`] and a [`Bar`] together with an optional bar width
 //! and is the value accepted by [`FutureExt`](crate::future::FutureExt),
 //! [`StreamExt`](crate::stream::StreamExt) and [`Group`](crate::future::Group). A bare
-//! [`Spinner`] also converts into a `ProgressStyle` via [`From`], so callers that only need a
+//! [`Spinner`] also converts into a `Theme` via [`From`], so callers that only need a
 //! spinner can pass one directly.
 //!
 //! ```rust
-//! use strides::{bar, spinner, style::ProgressStyle};
+//! use strides::{bar, spinner, Theme};
 //!
-//! let style = ProgressStyle::new()
+//! let theme = Theme::new()
 //!     .with_spinner(spinner::styles::DOTS_3)
 //!     .with_bar(bar::styles::SHADED)
 //!     .with_bar_width(40);
@@ -18,9 +18,9 @@
 use crate::bar::Bar;
 use crate::spinner::Spinner;
 
-/// Combined style for progress display, bundling a [`Spinner`] and a [`Bar`].
+/// Combined theme for progress display, bundling a [`Spinner`] and a [`Bar`].
 #[derive(Clone)]
-pub struct ProgressStyle<'a> {
+pub struct Theme<'a> {
     /// Spinner style to indicate activity.
     pub(crate) spinner: Spinner<'a>,
     /// Bar style to indicate progress.
@@ -29,14 +29,14 @@ pub struct ProgressStyle<'a> {
     pub(crate) bar_width: Option<usize>,
 }
 
-impl<'a> Default for ProgressStyle<'a> {
+impl<'a> Default for Theme<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> ProgressStyle<'a> {
-    /// Create a new progress style with an inactive spinner, no bar, and an
+impl<'a> Theme<'a> {
+    /// Create a new theme with an inactive spinner, no bar, and an
     /// auto-detected bar width.
     pub const fn new() -> Self {
         Self {
@@ -74,8 +74,8 @@ impl<'a> ProgressStyle<'a> {
     }
 }
 
-impl<'a> From<Spinner<'a>> for ProgressStyle<'a> {
+impl<'a> From<Spinner<'a>> for Theme<'a> {
     fn from(spinner: Spinner<'a>) -> Self {
-        ProgressStyle::default().with_spinner(spinner)
+        Theme::default().with_spinner(spinner)
     }
 }

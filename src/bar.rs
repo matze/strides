@@ -4,7 +4,7 @@
 //! together with optional borders, an in-between separator, and per-portion styling.
 //! Pre-defined variants live in the [`styles`] module.
 //!
-//! Bars are composed into a [`ProgressStyle`](crate::style::ProgressStyle) and consumed by
+//! Bars are composed into a [`Theme`](crate::Theme) and consumed by
 //! [`FutureExt`](crate::future::FutureExt) and [`StreamExt`](crate::stream::StreamExt).
 //!
 //! ```rust

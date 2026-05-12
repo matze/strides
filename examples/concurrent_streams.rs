@@ -7,21 +7,20 @@ use futures::channel::mpsc;
 use futures_concurrency::future::Race as _;
 use futures_lite::{StreamExt, future};
 use strides::future::Group;
-use strides::style::ProgressStyle;
-use strides::{bar, spinner, term};
+use strides::{Theme, bar, spinner, term};
 
 fn main() {
     let bar = bar::styles::THIN_LINE
         .with_filled_style(owo_colors::Style::new().bright_purple())
         .with_empty_style(owo_colors::Style::new().bright_black());
 
-    let style = ProgressStyle::default()
+    let theme = Theme::default()
         .with_spinner(spinner::styles::DOTS_3)
         .with_bar(bar)
         .with_bar_width(20);
 
     let mut group =
-        Group::new(style).with_spinner_style(owo_colors::Style::new().bright_green().bold());
+        Group::new(theme).with_spinner_style(owo_colors::Style::new().bright_green().bold());
 
     // Three "downloads" of different durations, each emitting a fake byte stream.
     for (label, secs) in [

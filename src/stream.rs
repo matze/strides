@@ -13,10 +13,9 @@ use std::task::Poll;
 
 use futures_lite::{Stream, stream};
 
+use crate::Theme;
 use crate::bar::Bar;
 use crate::term::clear_line;
-
-pub use crate::style::ProgressStyle;
 
 /// Stream for the [`progress`](StreamExt::progress) and
 /// [`progress_with_messages`](StreamExt::progress_with_messages) methods.
@@ -136,7 +135,7 @@ pub trait StreamExt<'a, F>: Stream {
     /// ```
     fn progress(
         self,
-        progress: ProgressStyle<'a>,
+        theme: Theme<'a>,
         progress_fn: F,
     ) -> Progress<
         'a,
@@ -149,14 +148,14 @@ pub trait StreamExt<'a, F>: Stream {
         Self: Sized,
         F: FnMut(usize, &Self::Item) -> f64 + Unpin,
     {
-        let bar_width = progress.effective_bar_width();
+        let bar_width = theme.effective_bar_width();
 
         Progress {
             inner: self,
             progress_fn,
-            bar: progress.bar,
+            bar: theme.bar,
             bar_width,
-            ticks: progress.spinner.ticks(),
+            ticks: theme.spinner.ticks(),
             messages: stream::pending::<&'static str>(),
             current: 0,
             spinner: None,
@@ -172,7 +171,7 @@ pub trait StreamExt<'a, F>: Stream {
     /// visible.
     fn progress_with_messages(
         self,
-        progress: ProgressStyle<'a>,
+        theme: Theme<'a>,
         progress_fn: F,
         messages: impl Stream<Item = impl std::fmt::Display>,
     ) -> Progress<'a, Self, F, impl Stream<Item = char>, impl Stream<Item = impl std::fmt::Display>>
@@ -180,14 +179,14 @@ pub trait StreamExt<'a, F>: Stream {
         Self: Sized,
         F: FnMut(usize, &Self::Item) -> f64 + Unpin,
     {
-        let bar_width = progress.effective_bar_width();
+        let bar_width = theme.effective_bar_width();
 
         Progress {
             inner: self,
             progress_fn,
-            bar: progress.bar,
+            bar: theme.bar,
             bar_width,
-            ticks: progress.spinner.ticks(),
+            ticks: theme.spinner.ticks(),
             messages,
             current: 0,
             spinner: None,

@@ -39,26 +39,24 @@
 //! ```
 //!
 //! Borders, an optional in-between separator, and per-portion colors are configured via the
-//! builder methods on [`Bar`](crate::bar::Bar). The bar is attached to a
-//! [`ProgressStyle`](crate::style::ProgressStyle) with
-//! [`with_bar()`](crate::style::ProgressStyle::with_bar); width defaults to the terminal size
-//! and can be overridden with
-//! [`with_bar_width()`](crate::style::ProgressStyle::with_bar_width).
+//! builder methods on [`Bar`](crate::bar::Bar). The bar is attached to a [`Theme`] with
+//! [`with_bar()`](crate::Theme::with_bar); width defaults to the terminal size and can be
+//! overridden with [`with_bar_width()`](crate::Theme::with_bar_width).
 //!
-//! ## Progress styles
+//! ## Themes
 //!
-//! A [`ProgressStyle`](crate::style::ProgressStyle) bundles a [`Spinner`](crate::spinner::Spinner)
-//! and a [`Bar`](crate::bar::Bar) into a single configuration object that can be passed to both
-//! the futures and streams progress APIs:
+//! A [`Theme`] bundles a [`Spinner`](crate::spinner::Spinner) and a [`Bar`](crate::bar::Bar)
+//! into a single configuration object that can be passed to both the futures and streams
+//! progress APIs:
 //!
 //! ```rust
-//! let style = strides::style::ProgressStyle::new()
+//! let theme = strides::Theme::new()
 //!     .with_bar(strides::bar::styles::PARALLELOGRAM)
 //!     .with_spinner(strides::spinner::styles::DOTS_3);
 //! ```
 //!
 //! A bare [`Spinner`](crate::spinner::Spinner) can also be passed directly wherever a
-//! [`ProgressStyle`](crate::style::ProgressStyle) is expected.
+//! [`Theme`] is expected.
 //!
 //! ## Futures
 //!
@@ -102,17 +100,17 @@
 //! ```rust,no_run
 //! use futures_lite::{StreamExt as _, stream};
 //! use strides::stream::StreamExt;
-//! use strides::style::ProgressStyle;
+//! use strides::Theme;
 //! use strides::{bar, spinner};
 //!
-//! let style = ProgressStyle::new()
+//! let theme = Theme::new()
 //!     .with_spinner(spinner::styles::DOTS_3)
 //!     .with_bar(bar::styles::SHADED);
 //!
 //! # futures_lite::future::block_on(async {
 //! let total = 100;
 //! stream::iter(0..total)
-//!     .progress(style, move |i, _| i as f64 / total as f64)
+//!     .progress(theme, move |i, _| i as f64 / total as f64)
 //!     .for_each(|_| {})
 //!     .await;
 //! # });
@@ -122,5 +120,7 @@ pub mod bar;
 pub mod future;
 pub mod spinner;
 pub mod stream;
-pub mod style;
 pub mod term;
+pub mod theme;
+
+pub use theme::Theme;

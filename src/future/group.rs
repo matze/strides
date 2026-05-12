@@ -8,9 +8,9 @@ use futures_lite::{FutureExt as _, Stream, stream};
 use futures_util::stream::FuturesUnordered;
 use owo_colors::OwoColorize;
 
+use crate::Theme;
 use crate::bar::Bar;
 use crate::spinner::Ticks;
-use crate::style::ProgressStyle;
 use crate::term::{clear_line, reset};
 
 /// Helper future that allows us to track the completion status of the wrapped future F.
@@ -122,23 +122,23 @@ impl<'a, F> Group<'a, F>
 where
     F: Future,
 {
-    /// Create a new group with the given progress style.
+    /// Create a new group with the given theme.
     ///
-    /// Accepts a [`ProgressStyle`] or a bare [`Spinner`](crate::spinner::Spinner) (converted via
-    /// `Into`). When the style includes a [`Bar`] it is used to render per-task progress for
+    /// Accepts a [`Theme`] or a bare [`Spinner`](crate::spinner::Spinner) (converted via
+    /// `Into`). When the theme includes a [`Bar`] it is used to render per-task progress for
     /// futures pushed via [`push_with_progress()`](Group::push_with_progress).
-    pub fn new<S: Into<ProgressStyle<'a>>>(style: S) -> Self {
-        let style = style.into();
-        let bar_width = style.effective_bar_width();
+    pub fn new<S: Into<Theme<'a>>>(theme: S) -> Self {
+        let theme = theme.into();
+        let bar_width = theme.effective_bar_width();
 
         Self {
             inner: FuturesUnordered::new(),
-            ticks: style.spinner.ticks(),
+            ticks: theme.spinner.ticks(),
             tasks: Vec::new(),
             annotation_style: owo_colors::Style::new(),
             spinner: None,
             spinner_style: owo_colors::Style::new(),
-            bar: style.bar,
+            bar: theme.bar,
             bar_width,
             with_elapsed_time: false,
             start: None,
@@ -204,7 +204,7 @@ where
     ///
     /// Each value yielded by `progress` is interpreted as a fraction in `0.0..=1.0` and rendered
     /// as a per-task bar between the spinner and the prefix. The latest value wins, so emitting
-    /// at a high rate is fine. The bar's style and width are taken from the [`ProgressStyle`]
+    /// at a high rate is fine. The bar's style and width are taken from the [`Theme`]
     /// passed to [`Group::new()`].
     pub fn push_with_progress(
         &mut self,

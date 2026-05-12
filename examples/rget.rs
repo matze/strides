@@ -3,8 +3,8 @@ use async_signal::{Signal, Signals};
 use clap::Parser;
 use futures::{StreamExt as _, TryStreamExt};
 use futures_concurrency::future::Race as _;
-use strides::stream::{ProgressStyle, StreamExt as _};
-use strides::{bar, spinner, term};
+use strides::stream::StreamExt as _;
+use strides::{Theme, bar, spinner, term};
 use tokio_util::codec::{BytesCodec, FramedWrite};
 
 #[derive(Parser, Debug)]
@@ -30,13 +30,13 @@ async fn main() -> anyhow::Result<()> {
     let length = response.content_length().unwrap() as f64;
     let mut sum = 0;
 
-    let progress = ProgressStyle::default()
+    let theme = Theme::default()
         .with_bar(bar::styles::SHADED)
         .with_spinner(spinner::styles::DOTS_3);
 
     let stream = response
         .bytes_stream()
-        .progress(progress, |_, item| {
+        .progress(theme, |_, item| {
             if let Ok(item) = item {
                 sum += item.len();
                 sum as f64 / length

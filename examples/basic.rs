@@ -5,8 +5,8 @@ use async_signal::{Signal, Signals};
 use futures_concurrency::future::Race as _;
 use futures_lite::StreamExt as _;
 use futures_lite::{Stream, future, stream};
-use strides::stream::{ProgressStyle, StreamExt};
-use strides::{bar, spinner, term};
+use strides::stream::StreamExt;
+use strides::{Theme, bar, spinner, term};
 
 fn throttle<I>(s: impl Stream<Item = I>, interval: Duration) -> impl Stream<Item = I> {
     s.zip(async_io::Timer::interval_at(Instant::now(), interval))
@@ -23,9 +23,9 @@ fn main() {
         Duration::from_secs(1),
     );
 
-    // Set up our progress with parallelogram bar and sand spinner. The stream gives no size
+    // Set up our theme with parallelogram bar and sand spinner. The stream gives no size
     // hint, thus we need to set the number of expected items manually.
-    let progress = ProgressStyle::default()
+    let theme = Theme::default()
         .with_bar(bar::styles::PARALLELOGRAM)
         .with_spinner(spinner::styles::SAND);
 
@@ -34,7 +34,7 @@ fn main() {
     future::block_on(async {
         let work = async {
             let sum = ticks
-                .progress_with_messages(progress, |index, _| index as f64 / 100.0, messages)
+                .progress_with_messages(theme, |index, _| index as f64 / 100.0, messages)
                 .fold(0, |acc, x| acc + x)
                 .await;
 

@@ -16,8 +16,8 @@ The crate is built around two extension traits and one container:
 - [`future::Group`] runs many futures concurrently and renders one line per
   task with optional per-task progress and dynamic messages.
 
-A [`style::ProgressStyle`] bundles a [`spinner::Spinner`] and a [`bar::Bar`]
-and is accepted everywhere a style is expected; bare spinners convert
+A [`Theme`] bundles a [`spinner::Spinner`] and a [`bar::Bar`] and is
+accepted everywhere a theme is expected; bare spinners convert
 implicitly. See [`spinner::styles`] and [`bar::styles`] for predefined
 variants.
 
@@ -26,7 +26,7 @@ variants.
 [`future::FutureExt`]: https://docs.rs/strides/latest/strides/future/trait.FutureExt.html
 [`stream::StreamExt`]: https://docs.rs/strides/latest/strides/stream/trait.StreamExt.html
 [`future::Group`]: https://docs.rs/strides/latest/strides/future/struct.Group.html
-[`style::ProgressStyle`]: https://docs.rs/strides/latest/strides/style/struct.ProgressStyle.html
+[`Theme`]: https://docs.rs/strides/latest/strides/struct.Theme.html
 [`spinner::Spinner`]: https://docs.rs/strides/latest/strides/spinner/struct.Spinner.html
 [`bar::Bar`]: https://docs.rs/strides/latest/strides/bar/struct.Bar.html
 [`spinner::styles`]: https://docs.rs/strides/latest/strides/spinner/styles/index.html

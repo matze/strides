@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+## 0.4.0
+
 ### Breaking changes
 
 - Rename `style::ProgressStyle` to `Theme` and re-export it at the crate

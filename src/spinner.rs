@@ -1,4 +1,21 @@
 //! Spinner UI element.
+//!
+//! A [`Spinner`] holds a set of characters and a tick interval. Calling
+//! [`ticks()`](Spinner::ticks) returns a [`Stream`] that yields the next character every
+//! interval, cycling forever. Pre-defined variants live in the [`styles`] module.
+//!
+//! ```rust
+//! use std::time::Duration;
+//! use futures_lite::{StreamExt, future};
+//! use strides::spinner;
+//!
+//! let custom = spinner::Spinner::new("◐◓◑◒").with_interval(Duration::from_millis(120));
+//!
+//! # future::block_on(async {
+//! let first: Vec<char> = custom.ticks().take(4).collect().await;
+//! assert_eq!(first, vec!['◐', '◓', '◑', '◒']);
+//! # });
+//! ```
 
 use std::future::Future;
 use std::pin::Pin;

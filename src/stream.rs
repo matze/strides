@@ -1,4 +1,11 @@
 //! Progress bar extension for streams.
+//!
+//! Import [`StreamExt`] to call [`progress()`](StreamExt::progress) and
+//! [`progress_with_messages()`](StreamExt::progress_with_messages) on any [`Stream`]. The
+//! progress closure receives the running item index (starting at 1) and a reference to the
+//! item, so the fraction can be derived either from a known total or from the item itself
+//! (e.g. accumulated bytes / `Content-Length`). See `examples/rget.rs` for a download
+//! progress bar driven by the latter.
 
 use std::io::Write;
 use std::pin::Pin;

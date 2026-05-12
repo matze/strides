@@ -1,3 +1,10 @@
+//! Terminal helpers.
+//!
+//! [`reset()`] returns the terminal to a clean state after progress rendering. Call it from a
+//! `Ctrl-C` handler when using [`Group`](crate::future::Group) so the hidden cursor is restored
+//! and any leftover lines are cleared. See `examples/concurrent_futures.rs` for a complete
+//! signal-handling setup.
+
 use std::io::Write;
 
 use crossterm::{QueueableCommand, cursor, terminal};

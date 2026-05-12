@@ -1,5 +1,11 @@
 //! Spinner integration for futures.
+//!
+//! Import [`FutureExt`] to wrap any [`Future`] with a spinner, optional bar, and message via
+//! [`progress()`](FutureExt::progress) or [`progress_with_messages()`](FutureExt::progress_with_messages).
+//! For multiple concurrent futures, use [`Group`] which renders one line per task and supports
+//! dynamic messages and per-task progress bars; see the type's documentation for an example.
 
+/// Concurrent futures rendered as one line per task. See [`Group`] for the entry point.
 pub mod group;
 
 pub use group::Group;

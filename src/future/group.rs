@@ -147,16 +147,19 @@ where
         }
     }
 
+    /// Apply `spinner_style` to the spinner character on every line.
     pub fn with_spinner_style(mut self, spinner_style: owo_colors::Style) -> Self {
         self.spinner_style = spinner_style;
         self
     }
 
+    /// Apply `annotation_style` to each task's prefix.
     pub fn with_annotation_style(mut self, annotation_style: owo_colors::Style) -> Self {
         self.annotation_style = annotation_style;
         self
     }
 
+    /// When `true`, prepend `[Xs]` (seconds since the group was first polled) to each line.
     pub fn with_elapsed_time(mut self, with_elapsed_time: bool) -> Self {
         self.with_elapsed_time = with_elapsed_time;
         self

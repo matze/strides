@@ -4,7 +4,7 @@ use async_io::Timer;
 use async_signal::{Signal, Signals};
 use futures_concurrency::future::Race as _;
 use futures_lite::{StreamExt, future};
-use strides::future::Group;
+use strides::future::{FutureExt, Group};
 use strides::{spinner, term};
 
 fn main() {
@@ -15,9 +15,9 @@ fn main() {
         .with_elapsed_time(true);
 
     // Add three futures with varying completion durations.
-    group.push(Timer::after(Duration::from_secs(1)), "one second".into());
-    group.push(Timer::after(Duration::from_secs(2)), "two seconds".into());
-    group.push(Timer::after(Duration::from_secs(3)), "three seconds".into());
+    group.push(Timer::after(Duration::from_secs(1)).with_label("one second"));
+    group.push(Timer::after(Duration::from_secs(2)).with_label("two seconds"));
+    group.push(Timer::after(Duration::from_secs(3)).with_label("three seconds"));
 
     let mut signals = Signals::new([Signal::Int]).expect("signal handler");
 

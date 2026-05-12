@@ -27,7 +27,8 @@ fn main() {
                 async_io::Timer::after(Duration::from_secs(5)).await;
                 42
             })
-            .progress_with_messages(spinner::styles::SAND, messages)
+            .progress(spinner::styles::SAND)
+            .with_messages(messages)
             .await;
 
             println!("Done!");

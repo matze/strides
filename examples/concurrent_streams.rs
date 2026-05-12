@@ -6,7 +6,7 @@ use futures::SinkExt;
 use futures::channel::mpsc;
 use futures_concurrency::future::Race as _;
 use futures_lite::{StreamExt, future};
-use strides::future::Group;
+use strides::future::{FutureExt, Group};
 use strides::{Theme, bar, spinner, term};
 
 fn main() {
@@ -40,7 +40,7 @@ fn main() {
             }
         };
 
-        group.push_with_progress(Box::pin(work), label.into(), rx);
+        group.push(Box::pin(work).with_label(label).with_progress(rx));
     }
 
     let mut signals = Signals::new([Signal::Int]).expect("signal handler");

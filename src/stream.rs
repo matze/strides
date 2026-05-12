@@ -1,87 +1,104 @@
 //! Progress bar extension for streams.
 //!
-//! Import [`StreamExt`] to call [`progress()`](StreamExt::progress) and
-//! [`progress_with_messages()`](StreamExt::progress_with_messages) on any [`Stream`]. The
-//! progress closure receives the running item index (starting at 1) and a reference to the
-//! item, so the fraction can be derived either from a known total or from the item itself
-//! (e.g. accumulated bytes / `Content-Length`). See `examples/rget.rs` for a download
-//! progress bar driven by the latter.
+//! Import [`StreamExt`] to call [`progress()`](StreamExt::progress) on any [`Stream`]. The fraction
+//! closure receives the running item index (starting at 1) and a reference to the item, so the
+//! fraction can be derived either from a known total or from the item itself (e.g. accumulated
+//! bytes / `Content-Length`). See `examples/rget.rs` for a download progress bar driven by the
+//! latter.
+//!
+//! Dynamic messages compose on top of the returned [`StreamProgressBuilder`] via
+//! [`with_messages`](StreamProgressBuilder::with_messages).
 
+use std::fmt::Display;
 use std::io::Write;
 use std::pin::Pin;
 use std::task::Poll;
 
+use futures_lite::stream::Pending;
 use futures_lite::{Stream, stream};
 
 use crate::Theme;
 use crate::bar::Bar;
+use crate::spinner::Ticks;
 use crate::term::clear_line;
 
-/// Stream for the [`progress`](StreamExt::progress) and
-/// [`progress_with_messages`](StreamExt::progress_with_messages) methods.
-pub struct Progress<'a, S, F, T, M> {
-    /// Wrapped stream.
+/// Builder returned by [`StreamExt::progress`].
+///
+/// Wraps the inner stream and drives a spinner, progress bar and optional message line as items
+/// flow through. The builder itself implements [`Stream`] so the wrapped items are passed through
+/// unchanged.
+///
+/// The `M` parameter tracks the optional messages stream and defaults to [`Pending`] (a ZST that
+/// never yields).
+pub struct StreamProgressBuilder<'a, S, F, M> {
     inner: S,
-    /// Progress bar style
     bar: Bar<'a>,
-    /// Width of the progress bar in characters.
     bar_width: usize,
-    /// Closure to compute the progress.
-    progress_fn: F,
-    /// Spinner tick stream.
-    ticks: T,
-    /// Messages stream.
+    ticks: Ticks<'a>,
+    fraction_fn: F,
     messages: M,
-    /// Current index
     current: usize,
-    /// Current spinner character.
-    spinner: Option<char>,
-    /// Current message.
+    spinner_char: Option<char>,
     message: Option<String>,
 }
 
-impl<'a, S, F, T, M, D> Stream for Progress<'a, S, F, T, M>
+impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
+    /// Replace the displayed message each time `messages` yields a value.
+    ///
+    /// When the stream is exhausted the last value remains visible.
+    pub fn with_messages<S2>(self, messages: S2) -> StreamProgressBuilder<'a, S, F, S2>
+    where
+        S2: Stream + Unpin,
+        S2::Item: Display,
+    {
+        StreamProgressBuilder {
+            inner: self.inner,
+            bar: self.bar,
+            bar_width: self.bar_width,
+            ticks: self.ticks,
+            fraction_fn: self.fraction_fn,
+            messages,
+            current: self.current,
+            spinner_char: self.spinner_char,
+            message: self.message,
+        }
+    }
+}
+
+impl<S, F, M> Stream for StreamProgressBuilder<'_, S, F, M>
 where
     S: Stream + Unpin,
     F: FnMut(usize, &S::Item) -> f64 + Unpin,
-    T: Stream<Item = char> + Unpin,
-    M: Stream<Item = D> + Unpin,
-    D: std::fmt::Display,
+    M: Stream + Unpin,
+    M::Item: Display,
 {
     type Item = S::Item;
 
     fn poll_next(
-        self: std::pin::Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
+    ) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        let inner = Pin::new(&mut this.inner);
-        let ticks = Pin::new(&mut this.ticks);
-        let messages = Pin::new(&mut this.messages);
 
-        // Poll the spinner stream.
-        if let Poll::Ready(spinner) = ticks.poll_next(cx) {
-            this.spinner = spinner;
+        if let Poll::Ready(spinner) = Pin::new(&mut this.ticks).poll_next(cx) {
+            this.spinner_char = spinner;
         }
 
-        // Poll the message stream.
-        if let Poll::Ready(Some(message)) = messages.poll_next(cx) {
-            this.message = Some(message.to_string());
+        while let Poll::Ready(Some(msg)) = Pin::new(&mut this.messages).poll_next(cx) {
+            this.message = Some(msg.to_string());
         }
 
-        // Poll the wrapped stream.
-        match inner.poll_next(cx) {
+        match Pin::new(&mut this.inner).poll_next(cx) {
             Poll::Ready(Some(item)) => {
                 this.current += 1;
 
                 let _ = clear_line(&mut std::io::stdout());
 
-                if let Some(spinner) = &this.spinner {
+                if let Some(spinner) = &this.spinner_char {
                     print!("{spinner} ");
                 }
 
-                let completed = (this.progress_fn)(this.current, &item);
-
+                let completed = (this.fraction_fn)(this.current, &item);
                 print!("{}", this.bar.render(this.bar_width, completed));
 
                 if let Some(message) = &this.message {
@@ -92,7 +109,6 @@ where
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                // Stream ended, so clear output.
                 let _ = clear_line(&mut std::io::stdout());
                 std::io::stdout().flush().expect("flushing");
                 Poll::Ready(None)
@@ -107,16 +123,19 @@ where
 /// Each time the wrapped stream yields an item, a spinner, progress bar and optional message are
 /// rendered to stdout. The line is cleared when the stream ends.
 ///
-/// Import this trait and call [`progress()`](StreamExt::progress) or
-/// [`progress_with_messages()`](StreamExt::progress_with_messages) on any
-/// stream.
-pub trait StreamExt<'a, F>: Stream {
-    /// Display a progress bar while consuming this stream.
+/// Import this trait and call [`progress()`](StreamExt::progress) on any stream to obtain a
+/// [`StreamProgressBuilder`].
+pub trait StreamExt: Stream {
+    /// Wrap this stream in a [`StreamProgressBuilder`] driven by `theme`.
     ///
-    /// `progress_fn` is called for every item and must return a value between `0.0` (no progress)
-    /// and `1.0` (complete). It receives the monotonically increasing item index (starting at 1)
-    /// and a reference to the item, so progress can be derived from either the count or the item
-    /// content.
+    /// `theme` accepts a [`Theme`] or a bare [`Spinner`](crate::spinner::Spinner) (converted via
+    /// `Into`). `fraction_fn` is called for every item and must return a value between `0.0` (no
+    /// progress) and `1.0` (complete). It receives the monotonically increasing item index
+    /// (starting at 1) and a reference to the item, so progress can be derived from either the
+    /// count or the item content.
+    ///
+    /// Use [`with_messages`](StreamProgressBuilder::with_messages) on the returned builder to also
+    /// display dynamic messages.
     ///
     /// # Example
     ///
@@ -128,71 +147,35 @@ pub trait StreamExt<'a, F>: Stream {
     /// # futures_lite::future::block_on(async {
     /// let total = 100;
     /// futures_lite::stream::iter(0..total)
-    ///     .progress(DOTS_3.into(), move |i, _| i as f64 / total as f64)
+    ///     .progress(DOTS_3, move |i, _| i as f64 / total as f64)
     ///     .count()
     ///     .await;
     /// # });
     /// ```
-    fn progress(
+    fn progress<'a, F>(
         self,
-        theme: Theme<'a>,
-        progress_fn: F,
-    ) -> Progress<
-        'a,
-        Self,
-        F,
-        impl Stream<Item = char> + use<'a, F, Self>,
-        impl Stream<Item = impl std::fmt::Display>,
-    >
+        theme: impl Into<Theme<'a>>,
+        fraction_fn: F,
+    ) -> StreamProgressBuilder<'a, Self, F, Pending<&'static str>>
     where
         Self: Sized,
         F: FnMut(usize, &Self::Item) -> f64 + Unpin,
     {
+        let theme = theme.into();
         let bar_width = theme.effective_bar_width();
 
-        Progress {
+        StreamProgressBuilder {
             inner: self,
-            progress_fn,
             bar: theme.bar,
             bar_width,
             ticks: theme.spinner.ticks(),
-            messages: stream::pending::<&'static str>(),
+            fraction_fn,
+            messages: stream::pending(),
             current: 0,
-            spinner: None,
-            message: None,
-        }
-    }
-
-    /// Display a progress bar with dynamically changing messages while consuming this stream.
-    ///
-    /// Works like [`progress()`](StreamExt::progress) but takes an additional `messages` stream.
-    /// Each time a new message arrives it replaces the text shown after the progress bar. If the
-    /// message stream is exhausted before the wrapped stream completes, the last message remains
-    /// visible.
-    fn progress_with_messages(
-        self,
-        theme: Theme<'a>,
-        progress_fn: F,
-        messages: impl Stream<Item = impl std::fmt::Display>,
-    ) -> Progress<'a, Self, F, impl Stream<Item = char>, impl Stream<Item = impl std::fmt::Display>>
-    where
-        Self: Sized,
-        F: FnMut(usize, &Self::Item) -> f64 + Unpin,
-    {
-        let bar_width = theme.effective_bar_width();
-
-        Progress {
-            inner: self,
-            progress_fn,
-            bar: theme.bar,
-            bar_width,
-            ticks: theme.spinner.ticks(),
-            messages,
-            current: 0,
-            spinner: None,
+            spinner_char: None,
             message: None,
         }
     }
 }
 
-impl<'a, S, F> StreamExt<'a, F> for S where S: Stream {}
+impl<S> StreamExt for S where S: Stream {}

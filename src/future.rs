@@ -1,84 +1,151 @@
 //! Spinner integration for futures.
 //!
 //! Import [`FutureExt`] to wrap any [`Future`] with a spinner, optional bar, and message via
-//! [`progress()`](FutureExt::progress) or [`progress_with_messages()`](FutureExt::progress_with_messages).
-//! For multiple concurrent futures, use [`Group`] which renders one line per task and supports
-//! dynamic messages and per-task progress bars; see the type's documentation for an example.
+//! [`progress()`](FutureExt::progress). The returned [`ProgressBuilder`] composes optional
+//! capabilities via [`with_message()`](ProgressBuilder::with_message),
+//! [`with_messages()`](ProgressBuilder::with_messages) and
+//! [`with_fraction()`](ProgressBuilder::with_fraction). For multiple concurrent futures, use
+//! [`Group`] which renders one line per task; see its documentation for an example.
 
 /// Concurrent futures rendered as one line per task. See [`Group`] for the entry point.
 pub mod group;
 
-pub use group::Group;
+pub use group::{Group, Task};
 
+use std::fmt::Display;
 use std::future::Future;
 use std::io::Write;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use futures_lite::{FutureExt as _, Stream, stream};
+use futures_lite::stream::Pending;
+use futures_lite::{Stream, stream};
 
 use crate::Theme;
 use crate::bar::Bar;
+use crate::spinner::Ticks;
 use crate::term::clear_line;
 
-/// Future for the [`progress`](FutureExt::progress) and
-/// [`progress_with_messages`](FutureExt::progress_with_messages) methods.
-pub struct Progress<'a, F, T, M> {
-    /// Wrapped future.
+/// Builder returned by [`FutureExt::progress`].
+///
+/// Holds the wrapped future together with the theme and optional capabilities — a static message, a
+/// stream of dynamic messages, and a stream of progress fractions. The builder implements
+/// [`Future`] so `.await` drives the rendering loop and resolves to the wrapped future's output.
+///
+/// The type parameters `M` and `P` track the message and fraction stream types respectively. They
+/// default to [`Pending`] (a ZST that never yields) so the bare `fut.progress(theme).await` path
+/// allocates nothing beyond the spinner [`Ticks`] state.
+pub struct ProgressBuilder<'a, F, M, P> {
     inner: F,
-    /// Spinner tick stream.
-    ticks: T,
-    /// Messages stream.
-    messages: M,
-    /// Progress bar style.
     bar: Bar<'a>,
-    /// Width of the progress bar in characters.
     bar_width: usize,
-    /// Current annotation for the future.
+    ticks: Ticks<'a>,
+    messages: M,
+    fraction: P,
+    spinner_char: Option<char>,
     message: Option<String>,
-    /// Current spinner character.
-    spinner: Option<char>,
-    /// Whether the display needs to be redrawn.
+    current_fraction: f64,
     dirty: bool,
 }
 
-impl<F, T, M, D> Future for Progress<'_, F, T, M>
+impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
+    /// Display a static `message` while the future is pending.
+    ///
+    /// If [`with_messages`](Self::with_messages) is also supplied, this value is shown until the
+    /// first item from the stream replaces it.
+    pub fn with_message(mut self, message: impl Display) -> Self {
+        self.message = Some(message.to_string());
+        self.dirty = true;
+        self
+    }
+
+    /// Replace the displayed message each time `messages` yields a value.
+    ///
+    /// When the stream is exhausted the last value remains visible. If
+    /// [`with_message`](Self::with_message) was also called, its text is shown until the first
+    /// stream item arrives.
+    pub fn with_messages<S>(self, messages: S) -> ProgressBuilder<'a, F, S, P>
+    where
+        S: Stream + Unpin,
+        S::Item: Display,
+    {
+        ProgressBuilder {
+            inner: self.inner,
+            bar: self.bar,
+            bar_width: self.bar_width,
+            ticks: self.ticks,
+            messages,
+            fraction: self.fraction,
+            spinner_char: self.spinner_char,
+            message: self.message,
+            current_fraction: self.current_fraction,
+            dirty: self.dirty,
+        }
+    }
+
+    /// Drive the progress bar from a stream of fractions in `0.0..=1.0`.
+    ///
+    /// The latest value wins, so emitting at a high rate is fine. The bar's style and width are
+    /// taken from the [`Theme`] passed to [`FutureExt::progress`]. If the theme has no bar
+    /// configured nothing is rendered.
+    pub fn with_fraction<S>(self, fraction: S) -> ProgressBuilder<'a, F, M, S>
+    where
+        S: Stream<Item = f64> + Unpin,
+    {
+        ProgressBuilder {
+            inner: self.inner,
+            bar: self.bar,
+            bar_width: self.bar_width,
+            ticks: self.ticks,
+            messages: self.messages,
+            fraction,
+            spinner_char: self.spinner_char,
+            message: self.message,
+            current_fraction: self.current_fraction,
+            dirty: self.dirty,
+        }
+    }
+}
+
+impl<F, M, P> Future for ProgressBuilder<'_, F, M, P>
 where
     F: Future + Unpin,
-    T: Stream<Item = char> + Unpin,
-    M: Stream<Item = D> + Unpin,
-    D: std::fmt::Display,
+    M: Stream + Unpin,
+    M::Item: Display,
+    P: Stream<Item = f64> + Unpin,
 {
     type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        let ticks = Pin::new(&mut this.ticks);
 
-        if let Poll::Ready(spinner) = ticks.poll_next(cx) {
-            this.spinner = spinner;
+        if let Poll::Ready(spinner) = Pin::new(&mut this.ticks).poll_next(cx) {
+            this.spinner_char = spinner;
             this.dirty = true;
         }
 
-        let messages = Pin::new(&mut this.messages);
-
-        if let Poll::Ready(Some(message)) = messages.poll_next(cx) {
-            this.message = Some(message.to_string());
+        while let Poll::Ready(Some(msg)) = Pin::new(&mut this.messages).poll_next(cx) {
+            this.message = Some(msg.to_string());
             this.dirty = true;
         }
 
-        let item = this.inner.poll(cx);
+        while let Poll::Ready(Some(f)) = Pin::new(&mut this.fraction).poll_next(cx) {
+            this.current_fraction = f.clamp(0.0, 1.0);
+            this.dirty = true;
+        }
+
+        let item = Pin::new(&mut this.inner).poll(cx);
 
         match item {
             Poll::Pending if this.dirty => {
                 this.dirty = false;
                 let _ = clear_line(&mut std::io::stdout());
 
-                if let Some(spinner) = &this.spinner {
+                if let Some(spinner) = &this.spinner_char {
                     print!("{spinner} ");
                 }
 
-                let bar = this.bar.render(this.bar_width, 0.0);
+                let bar = this.bar.render(this.bar_width, this.current_fraction);
 
                 if !bar.is_empty() {
                     print!("{bar} ");
@@ -106,14 +173,16 @@ where
 /// While the future is pending, a spinner, optional progress bar and message are rendered to
 /// stdout. The line is cleared once the future resolves.
 ///
-/// Import this trait and call [`progress()`](FutureExt::progress) or
-/// [`progress_with_messages()`](FutureExt::progress_with_messages) on any pinned future.
+/// Import this trait and call [`progress()`](FutureExt::progress) on any pinned future to obtain a
+/// [`ProgressBuilder`].
 pub trait FutureExt: Future {
-    /// Display a spinner and a static message while this future is pending.
+    /// Wrap this future in a [`ProgressBuilder`] driven by `theme`.
     ///
-    /// `theme` accepts a [`Theme`] or a bare [`Spinner`](crate::spinner::Spinner)
-    /// (converted via `Into`).  When the theme includes a bar it is rendered between the spinner
-    /// and the message.
+    /// `theme` accepts a [`Theme`] or a bare [`Spinner`](crate::spinner::Spinner) (converted via
+    /// `Into`). Without further configuration, the builder renders only the spinner while the
+    /// future is pending. Use [`with_message`](ProgressBuilder::with_message),
+    /// [`with_messages`](ProgressBuilder::with_messages) and
+    /// [`with_fraction`](ProgressBuilder::with_fraction) to add text and bar progress.
     ///
     /// # Example
     ///
@@ -123,74 +192,66 @@ pub trait FutureExt: Future {
     ///
     /// # futures_lite::future::block_on(async {
     /// let result = std::pin::pin!(async { 42 })
-    ///     .progress(DOTS_3, "computing …")
+    ///     .progress(DOTS_3)
+    ///     .with_message("computing …")
     ///     .await;
     /// # });
     /// ```
     fn progress<'a>(
         self,
         theme: impl Into<Theme<'a>>,
-        message: impl std::fmt::Display,
-    ) -> Progress<'a, Self, impl Stream<Item = char>, impl Stream<Item = impl std::fmt::Display>>
+    ) -> ProgressBuilder<'a, Self, Pending<&'static str>, Pending<f64>>
     where
         Self: Sized,
     {
         let theme = theme.into();
         let bar_width = theme.effective_bar_width();
 
-        Progress {
+        ProgressBuilder {
             inner: self,
-            ticks: theme.spinner.ticks(),
-            messages: stream::pending::<&'static str>(),
             bar: theme.bar,
             bar_width,
-            message: Some(message.to_string()),
-            spinner: None,
+            ticks: theme.spinner.ticks(),
+            messages: stream::pending(),
+            fraction: stream::pending(),
+            spinner_char: None,
+            message: None,
+            current_fraction: 0.0,
             dirty: true,
         }
     }
 
-    /// Display a spinner with dynamically changing messages while this future is pending.
-    ///
-    /// `messages` is a stream of displayable values. Each time a new value arrives it replaces the
-    /// currently shown message. If the message stream is exhausted before the future completes, the
-    /// last message remains visible.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use futures_lite::stream;
-    /// use strides::future::FutureExt;
-    /// use strides::spinner::styles::DOTS_3;
-    ///
-    /// # futures_lite::future::block_on(async {
-    /// let messages = stream::iter(["connecting …", "fetching …", "done"]);
-    /// let result = std::pin::pin!(async { 42 })
-    ///     .progress_with_messages(DOTS_3, messages)
-    ///     .await;
-    /// # });
-    /// ```
-    fn progress_with_messages<'a>(
-        self,
-        theme: impl Into<Theme<'a>>,
-        messages: impl Stream<Item = impl std::fmt::Display>,
-    ) -> Progress<'a, Self, impl Stream<Item = char>, impl Stream<Item = impl std::fmt::Display>>
+    /// Lift this future into a [`Task`] with the given static `label`, ready to be added to a
+    /// [`Group`] via [`Group::push`].
+    fn with_label<'a>(self, label: impl Into<String>) -> Task<'a, Self>
     where
         Self: Sized,
     {
-        let theme = theme.into();
-        let bar_width = theme.effective_bar_width();
+        Task::from(self).with_label(label)
+    }
 
-        Progress {
-            inner: self,
-            ticks: theme.spinner.ticks(),
-            messages,
-            bar: theme.bar,
-            bar_width,
-            message: None,
-            spinner: None,
-            dirty: true,
-        }
+    /// Lift this future into a [`Task`] with a dynamic-message stream, ready to be added to a
+    /// [`Group`] via [`Group::push`].
+    ///
+    /// Note that this is distinct from [`ProgressBuilder::with_messages`]: the receiver here is a
+    /// bare future, so the result is a [`Task`] — not a [`ProgressBuilder`].
+    fn with_messages<'a, S, D>(self, messages: S) -> Task<'a, Self>
+    where
+        Self: Sized,
+        S: Stream<Item = D> + Unpin + 'a,
+        D: Display + 'a,
+    {
+        Task::from(self).with_messages(messages)
+    }
+
+    /// Lift this future into a [`Task`] with a per-task progress stream, ready to be added to a
+    /// [`Group`] via [`Group::push`].
+    fn with_progress<'a, S>(self, progress: S) -> Task<'a, Self>
+    where
+        Self: Sized,
+        S: Stream<Item = f64> + Unpin + 'a,
+    {
+        Task::from(self).with_progress(progress)
     }
 }
 

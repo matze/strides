@@ -7,10 +7,31 @@
 - Rename `style::ProgressStyle` to `Theme` and re-export it at the crate
   root as `strides::Theme`. The `style` module is renamed to `theme`. The
   legacy `stream::ProgressStyle` re-export is dropped.
+- Reshape the progress API around builders so capabilities compose
+  orthogonally:
+  - `FutureExt::progress(theme)` now returns a `ProgressBuilder` with
+    `with_message`, `with_messages`, and `with_fraction` setters. The previous
+    `progress(theme, message)` and `progress_with_messages(...)` methods are
+    removed.
+  - `StreamExt::progress(theme, fraction_fn)` now returns a
+    `StreamProgressBuilder` with `with_messages`. The previous
+    `progress_with_messages(...)` method is removed.
+  - `Group::push(...)` accepts `impl Into<Task<'_, F>>`. `push_with_messages`
+    and `push_with_progress` are removed and configured via the new public
+    `future::Task` type or the mirrored `FutureExt::with_label`,
+    `FutureExt::with_messages`, and `FutureExt::with_progress` methods. The
+    label is rendered between the elapsed-time block and the progress bar
+    (previously the per-task `prefix` came after the bar).
+- `StreamExt::progress` now accepts `impl Into<Theme<'a>>`, so a bare `Spinner`
+  can be passed directly (mirroring `FutureExt::progress`).
 
 ### Changes
 
 - Add back `Theme::new()` and `const`ify most constructor APIs.
+- Tasks pushed into a `Group` with no message or progress stream no longer
+  allocate `Box<dyn Stream>` placeholders.
+- `Group` tasks accept `impl Display` for prefix and message stream items,
+  matching `FutureExt`.
 
 
 ## 0.3.0

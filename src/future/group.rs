@@ -1,10 +1,11 @@
+use std::fmt::Display;
 use std::future::Future;
 use std::task::{Context, Poll};
 use std::time::Instant;
 use std::{io::Write, pin::Pin};
 
 use crossterm::{QueueableCommand, cursor};
-use futures_lite::{FutureExt as _, Stream, stream};
+use futures_lite::{FutureExt as _, Stream, StreamExt as _};
 use futures_util::stream::FuturesUnordered;
 use owo_colors::OwoColorize;
 
@@ -48,44 +49,107 @@ where
     }
 }
 
-/// Per-task state tracking prefix, current message, optional progress, and the streams that update
-/// them.
-struct Task<'a> {
-    /// Static prefix/label shown before the message.
-    prefix: String,
-    /// Current message text, updated by the messages stream.
+/// A future together with its display configuration in a [`Group`].
+///
+/// `Task` is constructed from a bare future via `Into<Task<...>>` and configured fluently with
+/// [`with_label`](Task::with_label), [`with_messages`](Task::with_messages) and
+/// [`with_progress`](Task::with_progress). The same setters are mirrored on
+/// [`FutureExt`](super::FutureExt), so a future can be lifted into a `Task` simply by calling one
+/// of them.
+///
+/// ```rust,no_run
+/// use strides::future::FutureExt;
+///
+/// # async fn fetch() {}
+/// let task = fetch().with_label("alpha");
+/// ```
+pub struct Task<'a, F> {
+    fut: F,
+    label: Option<String>,
+    messages: Option<Box<dyn Stream<Item = String> + Unpin + 'a>>,
+    progress: Option<Box<dyn Stream<Item = f64> + Unpin + 'a>>,
+}
+
+impl<'a, F> From<F> for Task<'a, F>
+where
+    F: Future,
+{
+    fn from(fut: F) -> Self {
+        Self {
+            fut,
+            label: None,
+            messages: None,
+            progress: None,
+        }
+    }
+}
+
+impl<'a, F> Task<'a, F> {
+    /// Attach a static `label` to this task, rendered with the group's annotation style
+    /// between the elapsed-time block and the progress bar.
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Replace the displayed message each time `messages` yields a value.
+    ///
+    /// When the stream is exhausted the last value remains visible.
+    pub fn with_messages<S, D>(mut self, messages: S) -> Self
+    where
+        S: Stream<Item = D> + Unpin + 'a,
+        D: Display + 'a,
+    {
+        self.messages = Some(Box::new(messages.map(|d| d.to_string())));
+        self
+    }
+
+    /// Drive a per-task progress bar from a stream of fractions in `0.0..=1.0`.
+    ///
+    /// The latest value wins. The bar's style and width are taken from the [`Theme`] passed to
+    /// [`Group::new`].
+    pub fn with_progress<S>(mut self, progress: S) -> Self
+    where
+        S: Stream<Item = f64> + Unpin + 'a,
+    {
+        self.progress = Some(Box::new(progress));
+        self
+    }
+}
+
+/// Per-task state tracking label, current message and current progress fraction along with the
+/// streams driving them.
+struct TaskState<'a> {
+    label: Option<String>,
     message: Option<String>,
-    /// Stream of dynamic messages.
-    messages: Box<dyn Stream<Item = String> + Unpin + 'a>,
-    /// Current progress fraction in `0.0..=1.0`. `None` disables the bar for this task.
+    messages: Option<Box<dyn Stream<Item = String> + Unpin + 'a>>,
     progress: Option<f64>,
-    /// Stream of progress updates.
-    progress_stream: Box<dyn Stream<Item = f64> + Unpin + 'a>,
+    progress_stream: Option<Box<dyn Stream<Item = f64> + Unpin + 'a>>,
 }
 
 /// A group of futures displayed as multi-line progress with per-task annotations.
 ///
-/// Each future in the group occupies its own terminal line showing a spinner, optional progress
-/// bar and a message. Lines are removed as futures complete.
+/// Each future in the group occupies its own terminal line showing a spinner, optional progress bar
+/// and a message. Lines are removed as futures complete.
 ///
-/// Use [`push()`](Group::push) for static annotations,
-/// [`push_with_messages()`](Group::push_with_messages) for messages that update dynamically, or
-/// [`push_with_progress()`](Group::push_with_progress) to also render a per-task progress bar.
+/// Tasks are configured fluently and handed to [`push()`](Group::push), either as a bare future
+/// (via `Into<Task<...>>`) or as a [`Task`] configured with [`with_label`](Task::with_label),
+/// [`with_messages`](Task::with_messages) and [`with_progress`](Task::with_progress).
 ///
-/// `Group` implements [`Stream`], each time a future completes, the stream yields its output.
+/// `Group` implements [`Stream`]. Each time a future completes, the stream yields its output.
 ///
 /// # Example
 ///
 /// ```rust,no_run
 /// use std::time::Duration;
 /// use futures_lite::{StreamExt, future};
-/// use strides::future::Group;
+/// use strides::future::{FutureExt, Group};
 /// use strides::spinner;
 ///
 /// future::block_on(async {
 ///     let mut group = Group::new(spinner::styles::DOTS_3);
-///     group.push(async_io::Timer::after(Duration::from_secs(1)), "fast".into());
-///     group.push(async_io::Timer::after(Duration::from_secs(3)), "slow".into());
+///     group.push(async_io::Timer::after(Duration::from_secs(1)).with_label("fast"));
+///     group.push(async_io::Timer::after(Duration::from_secs(3)).with_label("slow"));
 ///     group.for_each(|_| {}).await;
 /// });
 /// ```
@@ -95,15 +159,14 @@ pub struct Group<'a, F> {
     /// Spinner tick stream.
     ticks: Ticks<'a>,
     /// Per-task state. Set to `None` when the corresponding future completes.
-    tasks: Vec<Option<Task<'a>>>,
+    tasks: Vec<Option<TaskState<'a>>>,
     /// Annotation style.
     annotation_style: owo_colors::Style,
     /// Current spinner character.
     spinner: Option<char>,
     /// Spinner style.
     spinner_style: owo_colors::Style,
-    /// Bar style used for tasks pushed via
-    /// [`push_with_progress()`](Group::push_with_progress).
+    /// Bar style used for tasks configured with [`Task::with_progress`].
     bar: Bar<'a>,
     /// Width of the progress bar in characters.
     bar_width: usize,
@@ -113,8 +176,8 @@ pub struct Group<'a, F> {
     start: Option<Instant>,
     /// Whether the display needs to be redrawn.
     dirty: bool,
-    /// Number of lines printed by the previous render, used to clear leftovers
-    /// when the active count shrinks.
+    /// Number of lines printed by the previous render, used to clear leftovers when the
+    /// active count shrinks.
     rendered_lines: usize,
 }
 
@@ -124,9 +187,9 @@ where
 {
     /// Create a new group with the given theme.
     ///
-    /// Accepts a [`Theme`] or a bare [`Spinner`](crate::spinner::Spinner) (converted via
-    /// `Into`). When the theme includes a [`Bar`] it is used to render per-task progress for
-    /// futures pushed via [`push_with_progress()`](Group::push_with_progress).
+    /// Accepts a [`Theme`] or a bare [`Spinner`](crate::spinner::Spinner) (converted via `Into`).
+    /// When the theme includes a [`Bar`] it is used to render per-task progress for tasks
+    /// configured via [`Task::with_progress`].
     pub fn new<S: Into<Theme<'a>>>(theme: S) -> Self {
         let theme = theme.into();
         let bar_width = theme.effective_bar_width();
@@ -165,62 +228,22 @@ where
         self
     }
 
-    /// Add `fut` to the group with a static annotation.
-    pub fn push(&mut self, fut: F, annotation: String) {
-        let id = self.tasks.len();
-        self.tasks.push(Some(Task {
-            prefix: annotation,
-            message: None,
-            messages: Box::new(stream::pending()),
-            progress: None,
-            progress_stream: Box::new(stream::pending()),
-        }));
-        self.inner.push(Annotated::new(fut, id));
-    }
-
-    /// Add `fut` to the group with a static prefix and a stream of dynamic messages.
+    /// Add a task to the group.
     ///
-    /// The `prefix` is always shown (e.g. `"[1/4]"`).  Each time `messages` yields a value it
-    /// replaces the text shown after the prefix.  When the stream is exhausted the last message
-    /// remains visible.
-    pub fn push_with_messages(
-        &mut self,
-        fut: F,
-        prefix: String,
-        messages: impl Stream<Item = String> + Unpin + 'a,
-    ) {
+    /// Accepts either a bare future (lifted into a [`Task`] via `From`) or a [`Task`] configured
+    /// with [`with_label`](Task::with_label), [`with_messages`](Task::with_messages) and/or
+    /// [`with_progress`](Task::with_progress).
+    pub fn push(&mut self, task: impl Into<Task<'a, F>>) {
+        let task = task.into();
         let id = self.tasks.len();
-        self.tasks.push(Some(Task {
-            prefix,
+        self.tasks.push(Some(TaskState {
+            label: task.label,
             message: None,
-            messages: Box::new(messages),
+            messages: task.messages,
             progress: None,
-            progress_stream: Box::new(stream::pending()),
+            progress_stream: task.progress,
         }));
-        self.inner.push(Annotated::new(fut, id));
-    }
-
-    /// Add `fut` to the group with a static prefix and a stream of progress updates.
-    ///
-    /// Each value yielded by `progress` is interpreted as a fraction in `0.0..=1.0` and rendered
-    /// as a per-task bar between the spinner and the prefix. The latest value wins, so emitting
-    /// at a high rate is fine. The bar's style and width are taken from the [`Theme`]
-    /// passed to [`Group::new()`].
-    pub fn push_with_progress(
-        &mut self,
-        fut: F,
-        prefix: String,
-        progress: impl Stream<Item = f64> + Unpin + 'a,
-    ) {
-        let id = self.tasks.len();
-        self.tasks.push(Some(Task {
-            prefix,
-            message: None,
-            messages: Box::new(stream::pending()),
-            progress: None,
-            progress_stream: Box::new(progress),
-        }));
-        self.inner.push(Annotated::new(fut, id));
+        self.inner.push(Annotated::new(task.fut, id));
     }
 }
 
@@ -242,17 +265,21 @@ where
             this.dirty = true;
         }
 
-        // Poll per-task message and progress streams. Drain the progress stream so the bar
-        // always reflects the latest value rather than lagging behind queued updates.
+        // Poll per-task message and progress streams. Drain the progress stream so the bar always
+        // reflects the latest value rather than lagging behind queued updates.
         for task in this.tasks.iter_mut().flatten() {
-            if let Poll::Ready(Some(msg)) = Pin::new(&mut task.messages).poll_next(cx) {
+            if let Some(messages) = task.messages.as_mut()
+                && let Poll::Ready(Some(msg)) = Pin::new(messages).poll_next(cx)
+            {
                 task.message = Some(msg);
                 this.dirty = true;
             }
 
-            while let Poll::Ready(Some(p)) = Pin::new(&mut task.progress_stream).poll_next(cx) {
-                task.progress = Some(p.clamp(0.0, 1.0));
-                this.dirty = true;
+            if let Some(progress_stream) = task.progress_stream.as_mut() {
+                while let Poll::Ready(Some(p)) = Pin::new(&mut *progress_stream).poll_next(cx) {
+                    task.progress = Some(p.clamp(0.0, 1.0));
+                    this.dirty = true;
+                }
             }
         }
 
@@ -288,6 +315,10 @@ where
                     print!("[{:.2}s] ", elapsed.as_secs_f64());
                 }
 
+                if let Some(label) = &task.label {
+                    print!("{} ", label.style(this.annotation_style));
+                }
+
                 if let Some(progress) = task.progress {
                     let bar = this.bar.render(this.bar_width, progress);
 
@@ -296,17 +327,15 @@ where
                     }
                 }
 
-                let prefix = task.prefix.style(this.annotation_style);
-
                 if let Some(message) = &task.message {
-                    println!("{prefix} {message}");
+                    println!("{message}");
                 } else {
-                    println!("{prefix}");
+                    println!();
                 }
             }
 
-            // The previous render may have drawn more lines than we just did. Clear
-            // those leftovers so completed tasks do not linger as stray output.
+            // The previous render may have drawn more lines than we just did. Clear those leftovers
+            // so completed tasks do not linger as stray output.
             let stale_lines = this.rendered_lines.saturating_sub(active_count);
 
             for _ in 0..stale_lines {

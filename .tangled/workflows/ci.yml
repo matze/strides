@@ -1,0 +1,21 @@
+when:
+  - event: ["pull_request"]
+    branch: ["main"]
+
+engine: "nixery"
+
+dependencies:
+  nixpkgs:
+    - cargo
+    - cargo-nextest
+    - clippy
+
+steps:
+  - name: "Test"
+    command: "cargo nextest run"
+
+  - name: "Format"
+    command: "cargo fmt --check"
+
+  - name: "Clippy"
+    command: "cargo clippy -- -D warnings"

@@ -15,6 +15,8 @@
 //!     .with_filled_style(owo_colors::Style::new().bright_purple());
 //! ```
 
+use std::fmt::{self, Display, Formatter, Write as _};
+
 use owo_colors::OwoColorize;
 
 /// Pre-defined progress bar styles. Each constant is a ready-to-use [`Bar`] that can be
@@ -100,35 +102,44 @@ impl<'a> Bar<'a> {
     /// a fraction in `0.0..=1.0`. Borders and the in-between separator are added outside that
     /// width. Mostly useful when integrating the bar into a custom renderer.
     pub fn render(&self, width: usize, completed: f64) -> String {
+        let mut buf = String::new();
+        self.render_into(&mut buf, width, completed);
+        buf
+    }
+
+    /// Like [`render`](Self::render) but appends into `buf` instead of allocating a new `String`.
+    /// Use this on hot paths where the same buffer can be cleared and reused across frames.
+    pub fn render_into(&self, buf: &mut String, width: usize, completed: f64) {
         let completed = (completed * width as f64) as usize;
         let remaining = width.saturating_sub(completed);
 
-        let complete = self
-            .complete
-            .map(|c| std::iter::repeat_n(c, completed).collect::<String>())
-            .unwrap_or_default();
+        if let Some(left) = self.left_border {
+            buf.push_str(left);
+        }
 
-        let remaining = self
-            .empty
-            .map(|c| std::iter::repeat_n(c, remaining).collect::<String>())
-            .unwrap_or_default();
+        if let Some(c) = self.complete {
+            let run = CharRun::new(c, completed);
+            match self.filled_style {
+                Some(style) => { let _ = write!(buf, "{}", run.style(style)); }
+                None => { let _ = write!(buf, "{run}"); }
+            }
+        }
 
-        let complete = match self.filled_style {
-            Some(style) => complete.style(style).to_string(),
-            None => complete,
-        };
+        if let Some(in_between) = self.in_between {
+            buf.push_str(in_between);
+        }
 
-        let remaining = match self.empty_style {
-            Some(style) => remaining.style(style).to_string(),
-            None => remaining,
-        };
+        if let Some(c) = self.empty {
+            let run = CharRun::new(c, remaining);
+            match self.empty_style {
+                Some(style) => { let _ = write!(buf, "{}", run.style(style)); }
+                None => { let _ = write!(buf, "{run}"); }
+            }
+        }
 
-        format!(
-            "{}{complete}{}{remaining}{}",
-            self.left_border.unwrap_or(""),
-            self.in_between.unwrap_or(""),
-            self.right_border.unwrap_or(""),
-        )
+        if let Some(right) = self.right_border {
+            buf.push_str(right);
+        }
     }
 
     /// Insert `chars` between the filled and empty portions, useful for a tip character such as
@@ -155,5 +166,27 @@ impl<'a> Bar<'a> {
     pub const fn with_empty_style(mut self, style: owo_colors::Style) -> Self {
         self.empty_style = Some(style);
         self
+    }
+}
+
+/// A repeated character rendered through `Display` so the styling layer can wrap it without
+/// materializing the intermediate run as a `String`.
+struct CharRun {
+    ch: char,
+    count: usize,
+}
+
+impl CharRun {
+    const fn new(ch: char, count: usize) -> Self {
+        Self { ch, count }
+    }
+}
+
+impl Display for CharRun {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for _ in 0..self.count {
+            f.write_char(self.ch)?;
+        }
+        Ok(())
     }
 }

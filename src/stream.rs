@@ -40,6 +40,7 @@ pub struct StreamProgressBuilder<'a, S, F, M> {
     current: usize,
     spinner_char: Option<char>,
     message: Option<String>,
+    render_buf: String,
 }
 
 impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
@@ -61,6 +62,7 @@ impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
             current: self.current,
             spinner_char: self.spinner_char,
             message: self.message,
+            render_buf: self.render_buf,
         }
     }
 }
@@ -99,7 +101,10 @@ where
                 }
 
                 let completed = (this.fraction_fn)(this.current, &item);
-                print!("{}", this.bar.render(this.bar_width, completed));
+                this.render_buf.clear();
+                this.bar
+                    .render_into(&mut this.render_buf, this.bar_width, completed);
+                print!("{}", this.render_buf);
 
                 if let Some(message) = &this.message {
                     print!(" {message}");
@@ -174,6 +179,7 @@ pub trait StreamExt: Stream {
             current: 0,
             spinner_char: None,
             message: None,
+            render_buf: String::new(),
         }
     }
 }

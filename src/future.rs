@@ -46,6 +46,7 @@ pub struct ProgressBuilder<'a, F, M, P> {
     message: Option<String>,
     current_fraction: f64,
     dirty: bool,
+    render_buf: String,
 }
 
 impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
@@ -80,6 +81,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             message: self.message,
             current_fraction: self.current_fraction,
             dirty: self.dirty,
+            render_buf: self.render_buf,
         }
     }
 
@@ -103,6 +105,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             message: self.message,
             current_fraction: self.current_fraction,
             dirty: self.dirty,
+            render_buf: self.render_buf,
         }
     }
 }
@@ -145,10 +148,12 @@ where
                     print!("{spinner} ");
                 }
 
-                let bar = this.bar.render(this.bar_width, this.current_fraction);
+                this.render_buf.clear();
+                this.bar
+                    .render_into(&mut this.render_buf, this.bar_width, this.current_fraction);
 
-                if !bar.is_empty() {
-                    print!("{bar} ");
+                if !this.render_buf.is_empty() {
+                    print!("{} ", this.render_buf);
                 }
 
                 if let Some(message) = &this.message {
@@ -218,6 +223,7 @@ pub trait FutureExt: Future {
             message: None,
             current_fraction: 0.0,
             dirty: true,
+            render_buf: String::new(),
         }
     }
 

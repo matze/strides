@@ -179,6 +179,8 @@ pub struct Group<'a, F> {
     /// Number of lines printed by the previous render, used to clear leftovers when the
     /// active count shrinks.
     rendered_lines: usize,
+    /// Reusable buffer for [`Bar::render_into`], cleared and re-used across tasks within a poll.
+    render_buf: String,
 }
 
 impl<'a, F> Group<'a, F>
@@ -207,6 +209,7 @@ where
             start: None,
             dirty: true,
             rendered_lines: 0,
+            render_buf: String::new(),
         }
     }
 
@@ -320,10 +323,12 @@ where
                 }
 
                 if let Some(progress) = task.progress {
-                    let bar = this.bar.render(this.bar_width, progress);
+                    this.render_buf.clear();
+                    this.bar
+                        .render_into(&mut this.render_buf, this.bar_width, progress);
 
-                    if !bar.is_empty() {
-                        print!("{bar} ");
+                    if !this.render_buf.is_empty() {
+                        print!("{} ", this.render_buf);
                     }
                 }
 

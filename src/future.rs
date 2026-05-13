@@ -14,7 +14,7 @@ pub use group::{Group, Task};
 
 use std::fmt::Display;
 use std::future::Future;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -47,6 +47,7 @@ pub struct ProgressBuilder<'a, F, M, P> {
     current_fraction: f64,
     dirty: bool,
     render_buf: String,
+    is_tty: bool,
 }
 
 impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
@@ -82,6 +83,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             current_fraction: self.current_fraction,
             dirty: self.dirty,
             render_buf: self.render_buf,
+            is_tty: self.is_tty,
         }
     }
 
@@ -106,6 +108,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             current_fraction: self.current_fraction,
             dirty: self.dirty,
             render_buf: self.render_buf,
+            is_tty: self.is_tty,
         }
     }
 }
@@ -139,34 +142,39 @@ where
 
         let item = Pin::new(&mut this.inner).poll(cx);
 
-        match item {
-            Poll::Pending if this.dirty => {
-                this.dirty = false;
-                let _ = clear_line(&mut std::io::stdout());
+        if this.is_tty {
+            match item {
+                Poll::Pending if this.dirty => {
+                    this.dirty = false;
+                    let _ = clear_line(&mut std::io::stdout());
 
-                if let Some(spinner) = &this.spinner_char {
-                    print!("{spinner} ");
+                    if let Some(spinner) = &this.spinner_char {
+                        print!("{spinner} ");
+                    }
+
+                    this.render_buf.clear();
+                    this.bar.render_into(
+                        &mut this.render_buf,
+                        this.bar_width,
+                        this.current_fraction,
+                    );
+
+                    if !this.render_buf.is_empty() {
+                        print!("{} ", this.render_buf);
+                    }
+
+                    if let Some(message) = &this.message {
+                        print!("{message}");
+                    }
+
+                    std::io::stdout().flush().expect("flushing");
                 }
-
-                this.render_buf.clear();
-                this.bar
-                    .render_into(&mut this.render_buf, this.bar_width, this.current_fraction);
-
-                if !this.render_buf.is_empty() {
-                    print!("{} ", this.render_buf);
+                Poll::Ready(_) => {
+                    let _ = clear_line(&mut std::io::stdout());
+                    std::io::stdout().flush().expect("flushing");
                 }
-
-                if let Some(message) = &this.message {
-                    print!("{message}");
-                }
-
-                std::io::stdout().flush().expect("flushing");
+                _ => {}
             }
-            Poll::Ready(_) => {
-                let _ = clear_line(&mut std::io::stdout());
-                std::io::stdout().flush().expect("flushing");
-            }
-            _ => {}
         }
 
         item
@@ -224,6 +232,7 @@ pub trait FutureExt: Future {
             current_fraction: 0.0,
             dirty: true,
             render_buf: String::new(),
+            is_tty: std::io::stdout().is_terminal(),
         }
     }
 

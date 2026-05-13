@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::future::Future;
+use std::io::IsTerminal;
 use std::task::{Context, Poll};
 use std::time::Instant;
 use std::{io::Write, pin::Pin};
@@ -181,6 +182,9 @@ pub struct Group<'a, F> {
     rendered_lines: usize,
     /// Reusable buffer for [`Bar::render_into`], cleared and re-used across tasks within a poll.
     render_buf: String,
+    /// `true` when stdout is a terminal at construction time. When false, every render path is
+    /// skipped so redirected output (e.g. piping to a file) stays free of ANSI escapes.
+    is_tty: bool,
 }
 
 impl<'a, F> Group<'a, F>
@@ -210,6 +214,7 @@ where
             dirty: true,
             rendered_lines: 0,
             render_buf: String::new(),
+            is_tty: std::io::stdout().is_terminal(),
         }
     }
 
@@ -299,7 +304,7 @@ where
             Poll::Pending => Poll::Pending,
         };
 
-        if this.dirty && !matches!(item, Poll::Ready(None)) {
+        if this.is_tty && this.dirty && !matches!(item, Poll::Ready(None)) {
             this.dirty = false;
 
             let mut stdout = std::io::stdout();

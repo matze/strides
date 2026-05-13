@@ -10,7 +10,7 @@
 //! [`with_messages`](StreamProgressBuilder::with_messages).
 
 use std::fmt::Display;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::Poll;
 
@@ -41,6 +41,7 @@ pub struct StreamProgressBuilder<'a, S, F, M> {
     spinner_char: Option<char>,
     message: Option<String>,
     render_buf: String,
+    is_tty: bool,
 }
 
 impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
@@ -63,6 +64,7 @@ impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
             spinner_char: self.spinner_char,
             message: self.message,
             render_buf: self.render_buf,
+            is_tty: self.is_tty,
         }
     }
 }
@@ -94,28 +96,33 @@ where
             Poll::Ready(Some(item)) => {
                 this.current += 1;
 
-                let _ = clear_line(&mut std::io::stdout());
+                if this.is_tty {
+                    let _ = clear_line(&mut std::io::stdout());
 
-                if let Some(spinner) = &this.spinner_char {
-                    print!("{spinner} ");
+                    if let Some(spinner) = &this.spinner_char {
+                        print!("{spinner} ");
+                    }
+
+                    let completed = (this.fraction_fn)(this.current, &item);
+                    this.render_buf.clear();
+                    this.bar
+                        .render_into(&mut this.render_buf, this.bar_width, completed);
+                    print!("{}", this.render_buf);
+
+                    if let Some(message) = &this.message {
+                        print!(" {message}");
+                    }
+
+                    std::io::stdout().flush().expect("flushing");
                 }
 
-                let completed = (this.fraction_fn)(this.current, &item);
-                this.render_buf.clear();
-                this.bar
-                    .render_into(&mut this.render_buf, this.bar_width, completed);
-                print!("{}", this.render_buf);
-
-                if let Some(message) = &this.message {
-                    print!(" {message}");
-                }
-
-                std::io::stdout().flush().expect("flushing");
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                let _ = clear_line(&mut std::io::stdout());
-                std::io::stdout().flush().expect("flushing");
+                if this.is_tty {
+                    let _ = clear_line(&mut std::io::stdout());
+                    std::io::stdout().flush().expect("flushing");
+                }
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
@@ -180,6 +187,7 @@ pub trait StreamExt: Stream {
             spinner_char: None,
             message: None,
             render_buf: String::new(),
+            is_tty: std::io::stdout().is_terminal(),
         }
     }
 }

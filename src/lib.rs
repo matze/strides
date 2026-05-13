@@ -10,8 +10,8 @@
 //! ## Spinners
 //!
 //! A spinner is a UI element that represents ongoing work. It is usually iconified as a circular
-//! motion but anything that streams Unicode characters can be used. To create a spinner, import
-//! the [`Spinner`](crate::spinner::Spinner) struct and pass it a string slice:
+//! motion but anything that streams Unicode characters can be used. To create a spinner, import the
+//! [`Spinner`](crate::spinner::Spinner) struct and pass it a string slice:
 //!
 //! ```rust
 //! let abc = strides::spinner::Spinner::new("abc");
@@ -27,10 +27,9 @@
 //!
 //! ## Bars
 //!
-//! A [`Bar`](crate::bar::Bar) renders fractional progress as a strip of characters. It is
-//! defined by two characters, one for the empty portion and one for the filled portion. Create
-//! one with [`Bar::new()`](crate::bar::Bar::new) or pick a pre-defined variant from
-//! [`bar::styles`]:
+//! A [`Bar`](crate::bar::Bar) renders fractional progress as a strip of characters. It is defined
+//! by two characters, one for the empty portion and one for the filled portion. Create one with
+//! [`Bar::new()`](crate::bar::Bar::new) or pick a pre-defined variant from [`bar::styles`]:
 //!
 //! ```rust
 //! let bar = strides::bar::styles::THIN_LINE
@@ -38,16 +37,15 @@
 //!     .with_filled_style(owo_colors::Style::new().bright_purple());
 //! ```
 //!
-//! Borders, an optional in-between separator, and per-portion colors are configured via the
-//! builder methods on [`Bar`](crate::bar::Bar). The bar is attached to a [`Theme`] with
+//! Borders, an optional in-between separator, and per-portion colors are configured via the builder
+//! methods on [`Bar`](crate::bar::Bar). The bar is attached to a [`Theme`] with
 //! [`with_bar()`](crate::Theme::with_bar); width defaults to the terminal size and can be
 //! overridden with [`with_bar_width()`](crate::Theme::with_bar_width).
 //!
 //! ## Themes
 //!
-//! A [`Theme`] bundles a [`Spinner`](crate::spinner::Spinner) and a [`Bar`](crate::bar::Bar)
-//! into a single configuration object that can be passed to both the futures and streams
-//! progress APIs:
+//! A [`Theme`] bundles a [`Spinner`](crate::spinner::Spinner) and a [`Bar`](crate::bar::Bar) into a
+//! single configuration object that can be passed to both the futures and streams progress APIs:
 //!
 //! ```rust
 //! let theme = strides::Theme::new()
@@ -65,9 +63,9 @@
 //! [`ProgressBuilder`](crate::future::ProgressBuilder). Capabilities compose freely:
 //! [`with_message`](crate::future::ProgressBuilder::with_message) sets a static message,
 //! [`with_messages`](crate::future::ProgressBuilder::with_messages) installs a
-//! [`Stream`](futures_lite::Stream) whose values replace the displayed message as they arrive,
-//! and [`with_fraction`](crate::future::ProgressBuilder::with_fraction) drives the progress bar
-//! from a `Stream<Item = f64>`.
+//! [`Stream`](futures_lite::Stream) whose values replace the displayed message as they arrive, and
+//! [`with_fraction`](crate::future::ProgressBuilder::with_fraction) drives the progress bar from a
+//! `Stream<Item = f64>`.
 //!
 //! ```rust,no_run
 //! use strides::future::FutureExt;
@@ -91,12 +89,11 @@
 //! ## Streams
 //!
 //! Import the [`StreamExt`](crate::stream::StreamExt) extension trait and call
-//! [`progress()`](crate::stream::StreamExt::progress) with a fraction closure. The closure
-//! receives the monotonically increasing item number (starting at 1) and a reference to the
-//! item, so the fraction can be derived from a known total or from the item itself (e.g.
-//! accumulated bytes / `Content-Length`). The returned
-//! [`StreamProgressBuilder`](crate::stream::StreamProgressBuilder) accepts a
-//! [`with_messages`](crate::stream::StreamProgressBuilder::with_messages) stream for
+//! [`progress()`](crate::stream::StreamExt::progress) with a fraction closure. The closure receives
+//! the monotonically increasing item number (starting at 1) and a reference to the item, so the
+//! fraction can be derived from a known total or from the item itself (e.g. accumulated bytes /
+//! `Content-Length`). The returned [`StreamProgressBuilder`](crate::stream::StreamProgressBuilder)
+//! accepts a [`with_messages`](crate::stream::StreamProgressBuilder::with_messages) stream for
 //! dynamic text.
 //!
 //! ```rust,no_run
@@ -120,8 +117,10 @@
 //!
 //! ## Output
 //!
-//! strides currently renders all progress output to `stdout`. A renderer abstraction (for
-//! tests or TUI embedding) is intentionally out of scope for 1.0 in favor of simplicity.
+//! strides currently renders all progress output to `stdout`. When `stdout` is not a terminal (for
+//! example, when the program's output is redirected to a file or piped to another command) progress
+//! rendering is suppressed entirely. Futures and streams still run to completion, but no spinner,
+//! bar, or message bytes are written.
 
 pub mod bar;
 pub mod future;

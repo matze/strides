@@ -5,7 +5,7 @@ use async_signal::{Signal, Signals};
 use futures::SinkExt;
 use futures::channel::mpsc;
 use futures_concurrency::future::Race as _;
-use futures_lite::{StreamExt, future};
+use futures_lite::{StreamExt, future, stream};
 use strides::future::{FutureExt, Group};
 use strides::{Theme, bar, spinner, term};
 
@@ -23,10 +23,10 @@ fn main() {
         Group::new(theme).with_spinner_style(owo_colors::Style::new().bright_green().bold());
 
     // Three "downloads" of different durations, each emitting a fake byte stream.
-    for (label, secs) in [
-        ("alpha", Duration::from_secs(2)),
-        ("beta", Duration::from_secs(3)),
-        ("gamma", Duration::from_secs(4)),
+    for (label, message, secs) in [
+        ("X", "alpha", Duration::from_secs(2)),
+        ("Y", "beta", Duration::from_secs(3)),
+        ("Z", "gamma", Duration::from_secs(4)),
     ] {
         let (mut tx, rx) = mpsc::unbounded::<f64>();
 
@@ -40,7 +40,12 @@ fn main() {
             }
         };
 
-        group.push(Box::pin(work).with_label(label).with_progress(rx));
+        group.push(
+            Box::pin(work)
+                .with_label(label)
+                .with_messages(stream::once(message))
+                .with_progress(rx),
+        );
     }
 
     let mut signals = Signals::new([Signal::Int]).expect("signal handler");

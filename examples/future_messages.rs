@@ -14,7 +14,12 @@ fn throttle<I>(s: impl Stream<Item = I>, interval: Duration) -> impl Stream<Item
 fn main() {
     // Define a stream of messages that are emitted every second.
     let messages = throttle(
-        stream::iter(["connecting ...", "fetching data ...", "processing ...", "wrapping up ..."]),
+        stream::iter([
+            "connecting ...",
+            "fetching data ...",
+            "processing ...",
+            "wrapping up ...",
+        ]),
         Duration::from_secs(1),
     );
 

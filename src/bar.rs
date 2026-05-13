@@ -120,8 +120,12 @@ impl<'a> Bar<'a> {
         if let Some(c) = self.complete {
             let run = CharRun::new(c, completed);
             match self.filled_style {
-                Some(style) => { let _ = write!(buf, "{}", run.style(style)); }
-                None => { let _ = write!(buf, "{run}"); }
+                Some(style) => {
+                    let _ = write!(buf, "{}", run.style(style));
+                }
+                None => {
+                    let _ = write!(buf, "{run}");
+                }
             }
         }
 
@@ -132,8 +136,12 @@ impl<'a> Bar<'a> {
         if let Some(c) = self.empty {
             let run = CharRun::new(c, remaining);
             match self.empty_style {
-                Some(style) => { let _ = write!(buf, "{}", run.style(style)); }
-                None => { let _ = write!(buf, "{run}"); }
+                Some(style) => {
+                    let _ = write!(buf, "{}", run.style(style));
+                }
+                None => {
+                    let _ = write!(buf, "{run}");
+                }
             }
         }
 

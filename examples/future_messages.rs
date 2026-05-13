@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use async_signal::{Signal, Signals};
 use futures_concurrency::future::Race as _;
-use futures_lite::{Stream, StreamExt as _, future, stream};
+use futures_lite::{future, stream, Stream, StreamExt as _};
 use strides::future::FutureExt;
 use strides::{spinner, term};
 

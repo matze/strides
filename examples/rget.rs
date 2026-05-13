@@ -4,7 +4,7 @@ use clap::Parser;
 use futures::{StreamExt as _, TryStreamExt};
 use futures_concurrency::future::Race as _;
 use strides::stream::StreamExt as _;
-use strides::{Theme, bar, spinner, term};
+use strides::{bar, spinner, term, Theme};
 use tokio_util::codec::{BytesCodec, FramedWrite};
 
 #[derive(Parser, Debug)]

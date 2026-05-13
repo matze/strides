@@ -2,6 +2,7 @@
 
 [![Cargo](https://img.shields.io/crates/v/strides.svg)](https://crates.io/crates/strides)
 [![Documentation](https://docs.rs/strides/badge.svg)](https://docs.rs/strides)
+[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
 
 A command-line UI library to enhance async programs with progress bars and
 spinners. It is async-first, opinionated, far from feature complete and
@@ -66,6 +67,11 @@ future::block_on(async {
 
 See the [examples](./examples/) directory for more elaborate uses including
 downloads, dynamic messages, and per-task progress bars.
+
+
+## Minimum supported Rust version
+
+strides requires Rust 1.85 or newer.
 
 
 ## License

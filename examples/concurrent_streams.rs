@@ -2,12 +2,12 @@ use std::time::{Duration, Instant};
 
 use async_io::Timer;
 use async_signal::{Signal, Signals};
-use futures::SinkExt;
 use futures::channel::mpsc;
+use futures::SinkExt;
 use futures_concurrency::future::Race as _;
-use futures_lite::{StreamExt, future, stream};
+use futures_lite::{future, stream, StreamExt};
 use strides::future::{FutureExt, Group};
-use strides::{Theme, bar, spinner, term};
+use strides::{bar, spinner, term, Theme};
 
 fn main() {
     let bar = bar::styles::THIN_LINE

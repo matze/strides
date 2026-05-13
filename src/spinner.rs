@@ -158,7 +158,7 @@ mod tests {
 
     use super::*;
 
-    use futures_lite::{StreamExt, future};
+    use futures_lite::{future, StreamExt};
 
     #[test]
     fn spinner() {

@@ -3,7 +3,7 @@ use std::time::Duration;
 use async_io::Timer;
 use async_signal::{Signal, Signals};
 use futures_concurrency::future::Race as _;
-use futures_lite::{StreamExt, future};
+use futures_lite::{future, StreamExt};
 use strides::future::{FutureExt, Group};
 use strides::{spinner, term};
 

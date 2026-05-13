@@ -19,12 +19,12 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use futures_lite::stream::Pending;
-use futures_lite::{Stream, stream};
+use futures_lite::{stream, Stream};
 
-use crate::Theme;
 use crate::bar::Bar;
 use crate::spinner::Ticks;
 use crate::term::clear_line;
+use crate::Theme;
 
 /// Builder returned by [`FutureExt::progress`].
 ///

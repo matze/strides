@@ -5,15 +5,15 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 use std::{io::Write, pin::Pin};
 
-use crossterm::{QueueableCommand, cursor};
+use crossterm::{cursor, QueueableCommand};
 use futures_lite::{FutureExt as _, Stream, StreamExt as _};
 use futures_util::stream::FuturesUnordered;
 use owo_colors::OwoColorize;
 
-use crate::Theme;
 use crate::bar::Bar;
 use crate::spinner::Ticks;
 use crate::term::{clear_line, reset};
+use crate::Theme;
 
 /// Helper future that allows us to track the completion status of the wrapped future F.
 struct Annotated<F> {
@@ -276,11 +276,11 @@ where
         // Poll per-task message and progress streams. Drain the progress stream so the bar always
         // reflects the latest value rather than lagging behind queued updates.
         for task in this.tasks.iter_mut().flatten() {
-            if let Some(messages) = task.messages.as_mut()
-                && let Poll::Ready(Some(msg)) = Pin::new(messages).poll_next(cx)
-            {
-                task.message = Some(msg);
-                this.dirty = true;
+            if let Some(messages) = task.messages.as_mut() {
+                if let Poll::Ready(Some(msg)) = Pin::new(messages).poll_next(cx) {
+                    task.message = Some(msg);
+                    this.dirty = true;
+                }
             }
 
             if let Some(progress_stream) = task.progress_stream.as_mut() {

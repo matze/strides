@@ -4,9 +4,9 @@ use std::time::Instant;
 use async_signal::{Signal, Signals};
 use futures_concurrency::future::Race as _;
 use futures_lite::StreamExt as _;
-use futures_lite::{Stream, future, stream};
+use futures_lite::{future, stream, Stream};
 use strides::stream::StreamExt;
-use strides::{Theme, bar, spinner, term};
+use strides::{bar, spinner, term, Theme};
 
 fn throttle<I>(s: impl Stream<Item = I>, interval: Duration) -> impl Stream<Item = I> {
     s.zip(async_io::Timer::interval_at(Instant::now(), interval))

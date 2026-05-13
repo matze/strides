@@ -7,7 +7,7 @@
 
 use std::io::{IsTerminal, Write};
 
-use crossterm::{QueueableCommand, cursor, terminal};
+use crossterm::{cursor, terminal, QueueableCommand};
 
 /// Clear the current line and move the cursor to the first column.
 pub(crate) fn clear_line(stdout: &mut std::io::Stdout) -> std::io::Result<()> {

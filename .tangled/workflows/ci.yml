@@ -9,6 +9,8 @@ dependencies:
     - cargo
     - cargo-nextest
     - clippy
+    - gcc
+    - rustfmt
 
 steps:
   - name: "Test"

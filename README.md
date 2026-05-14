@@ -5,19 +5,19 @@
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
 
 A command-line UI library to enhance async programs with progress bars and
-spinners. It is async-first, opinionated, far from feature complete and
-absolutely not API stable. Use at your own risk.
+spinners.
 
 The crate is built around two extension traits and one container:
 
-[`FutureExt`] adds `.progress(theme)` to any [`Future`], animating it
-automatically and returning a builder for further customization. [`StreamExt`]
-adds `.progress(theme, fraction_fn)` to any [`Stream`], animating it and
-returning a builder for further customization. [`Group`] runs many futures
-concurrently and renders one line per task.
+- [`FutureExt`] adds `.progress(...)` to any [`Future`].
+- [`StreamExt`] adds `.progress(...)` to any [`Stream`].
+- [`Group`] runs many futures concurrently, rendering one line per task.
 
-A [`Theme`] bundles a [`Spinner`] and a [`Bar`] and is accepted everywhere a
-theme is expected. See [`spinner::styles`] and [`bar::styles`] for predefined
+Each `.progress(...)` call animates automatically and returns a builder for
+further customization. A [`Theme`] bundles a [`Spinner`], a [`Bar`] and a
+[`Layout`], and is accepted everywhere a theme is expected. A [`Layout`] is an
+ordered list of [`Segment`]s controlling the order, spacing and formatting of
+each progress line. See [`spinner::styles`] and [`bar::styles`] for predefined
 variants.
 
 [`Future`]: https://doc.rust-lang.org/std/future/trait.Future.html
@@ -28,6 +28,8 @@ variants.
 [`Theme`]: https://docs.rs/strides/latest/strides/struct.Theme.html
 [`Spinner`]: https://docs.rs/strides/latest/strides/spinner/struct.Spinner.html
 [`Bar`]: https://docs.rs/strides/latest/strides/bar/struct.Bar.html
+[`Layout`]: https://docs.rs/strides/latest/strides/layout/struct.Layout.html
+[`Segment`]: https://docs.rs/strides/latest/strides/layout/enum.Segment.html
 [`spinner::styles`]: https://docs.rs/strides/latest/strides/spinner/styles/index.html
 [`bar::styles`]: https://docs.rs/strides/latest/strides/bar/styles/index.html
 

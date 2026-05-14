@@ -216,24 +216,39 @@ impl Segment {
                 if !ctx.show_elapsed {
                     return;
                 }
-                let mut token = String::new();
-                if let Some((left, _)) = border {
-                    token.push_str(left);
-                }
-                let _ = write!(
-                    token,
-                    "{:.*}s",
-                    *precision as usize,
-                    ctx.elapsed.as_secs_f64()
-                );
-                if let Some((_, right)) = border {
-                    token.push_str(right);
-                }
                 match style {
                     Some(style) => {
+                        // Styling wraps the whole token, borders included, so it has to be
+                        // materialized before it can be styled.
+                        let mut token = String::new();
+                        if let Some((left, _)) = border {
+                            token.push_str(left);
+                        }
+                        let _ = write!(
+                            token,
+                            "{:.*}s",
+                            *precision as usize,
+                            ctx.elapsed.as_secs_f64()
+                        );
+                        if let Some((_, right)) = border {
+                            token.push_str(right);
+                        }
                         let _ = write!(buf, "{}", token.style(*style));
                     }
-                    None => buf.push_str(&token),
+                    None => {
+                        if let Some((left, _)) = border {
+                            buf.push_str(left);
+                        }
+                        let _ = write!(
+                            buf,
+                            "{:.*}s",
+                            *precision as usize,
+                            ctx.elapsed.as_secs_f64()
+                        );
+                        if let Some((_, right)) = border {
+                            buf.push_str(right);
+                        }
+                    }
                 }
             }
             Segment::Bar => {
@@ -246,11 +261,13 @@ impl Segment {
                     let style = style.unwrap_or(ctx.annotation_style);
                     match width {
                         Some(width) => {
-                            let mut field: String = label.chars().take(*width).collect();
-                            for _ in field.chars().count()..*width {
-                                field.push(' ');
-                            }
-                            let _ = write!(buf, "{}", field.style(style));
+                            // Width pads to `width` chars, precision truncates to `width` chars.
+                            let width = *width;
+                            let _ = write!(
+                                buf,
+                                "{}",
+                                format_args!("{label:<width$.width$}").style(style)
+                            );
                         }
                         None => {
                             let _ = write!(buf, "{}", label.style(style));

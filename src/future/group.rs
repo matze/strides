@@ -71,7 +71,7 @@ pub struct Task<'a, F> {
     progress: Option<Box<dyn Stream<Item = f64> + Unpin + 'a>>,
 }
 
-impl<'a, F> From<F> for Task<'a, F>
+impl<F> From<F> for Task<'_, F>
 where
     F: Future,
 {

@@ -29,7 +29,7 @@ pub struct Theme<'a> {
     pub(crate) bar_width: Option<usize>,
 }
 
-impl<'a> Default for Theme<'a> {
+impl Default for Theme<'_> {
     fn default() -> Self {
         Self::new()
     }

@@ -71,7 +71,7 @@ pub struct Bar<'a> {
     empty_style: Option<owo_colors::Style>,
 }
 
-impl<'a> Bar<'a> {
+impl Bar<'_> {
     /// Create a new bar from the character used for the empty portion and the character used for
     /// the filled portion. See the [`styles`] module for pre-defined variants.
     pub const fn new(empty: char, complete: char) -> Self {

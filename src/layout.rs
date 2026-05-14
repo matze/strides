@@ -325,23 +325,24 @@ impl Layout {
     /// Segments that produce no output are skipped, and the separator is inserted only between
     /// segments that do produce output.
     pub fn render(&self, ctx: &RenderContext, buf: &mut String) {
-        let mut scratch = String::new();
         let mut first = true;
 
         for segment in self.segments.iter() {
-            scratch.clear();
-            segment.render(ctx, &mut scratch);
-
-            if scratch.is_empty() {
-                continue;
-            }
-
+            let rollback = buf.len();
             if !first {
                 buf.push_str(&self.separator);
             }
+            let after_separator = buf.len();
 
-            buf.push_str(&scratch);
-            first = false;
+            segment.render(ctx, buf);
+
+            // A segment that appended nothing is treated as absent: undo the separator we
+            // optimistically pushed and leave `first` untouched.
+            if buf.len() == after_separator {
+                buf.truncate(rollback);
+            } else {
+                first = false;
+            }
         }
     }
 }

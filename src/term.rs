@@ -18,6 +18,23 @@ pub(crate) fn clear_line(stdout: &mut std::io::Stdout) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Restores the terminal cursor when dropped, including early drops where the progress builder is
+/// abandoned before completion (e.g. `break` out of a `for_each`).
+pub(crate) struct CursorGuard {
+    pub(crate) is_tty: bool,
+}
+
+impl Drop for CursorGuard {
+    fn drop(&mut self) {
+        if self.is_tty {
+            let mut stdout = std::io::stdout();
+            let _ = clear_line(&mut stdout);
+            let _ = stdout.queue(cursor::Show);
+            let _ = stdout.flush();
+        }
+    }
+}
+
 /// Restore the terminal after progress rendering.
 ///
 /// Shows the cursor (in case it was hidden by a [`Group`](crate::future::Group)) and clears

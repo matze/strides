@@ -22,6 +22,12 @@
 - Lower dependency version requirements and set the minimum supported Rust
   version to 1.85.
 
+### Fixed
+
+- Hide the terminal cursor while a `ProgressBuilder` or `StreamProgressBuilder`
+  renders and restore it when the future/stream completes or the builder is
+  dropped early, so it no longer blinks at the end of the progress line.
+
 
 ## 0.4.0
 

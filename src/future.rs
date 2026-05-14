@@ -19,12 +19,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
 
+use crossterm::{cursor, QueueableCommand};
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 
 use crate::bar::Bar;
 use crate::spinner::Ticks;
-use crate::term::clear_line;
+use crate::term::{clear_line, CursorGuard};
 use crate::Theme;
 
 /// Builder returned by [`FutureExt::progress`].
@@ -50,7 +51,7 @@ pub struct ProgressBuilder<'a, F, M, P> {
     start: Option<Instant>,
     dirty: bool,
     render_buf: String,
-    is_tty: bool,
+    guard: CursorGuard,
 }
 
 impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
@@ -88,7 +89,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             start: self.start,
             dirty: self.dirty,
             render_buf: self.render_buf,
-            is_tty: self.is_tty,
+            guard: self.guard,
         }
     }
 
@@ -122,7 +123,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             start: self.start,
             dirty: self.dirty,
             render_buf: self.render_buf,
-            is_tty: self.is_tty,
+            guard: self.guard,
         }
     }
 }
@@ -156,11 +157,13 @@ where
 
         let item = Pin::new(&mut this.inner).poll(cx);
 
-        if this.is_tty {
+        if this.guard.is_tty {
             match item {
                 Poll::Pending if this.dirty => {
                     this.dirty = false;
-                    let _ = clear_line(&mut std::io::stdout());
+                    let mut stdout = std::io::stdout();
+                    let _ = clear_line(&mut stdout);
+                    let _ = stdout.queue(cursor::Hide);
 
                     if this.with_elapsed_time {
                         let elapsed = this.start.get_or_insert_with(Instant::now).elapsed();
@@ -189,8 +192,10 @@ where
                     std::io::stdout().flush().expect("flushing");
                 }
                 Poll::Ready(_) => {
-                    let _ = clear_line(&mut std::io::stdout());
-                    std::io::stdout().flush().expect("flushing");
+                    let mut stdout = std::io::stdout();
+                    let _ = clear_line(&mut stdout);
+                    let _ = stdout.queue(cursor::Show);
+                    stdout.flush().expect("flushing");
                 }
                 _ => {}
             }
@@ -253,7 +258,9 @@ pub trait FutureExt: Future {
             start: None,
             dirty: true,
             render_buf: String::new(),
-            is_tty: std::io::stdout().is_terminal(),
+            guard: CursorGuard {
+                is_tty: std::io::stdout().is_terminal(),
+            },
         }
     }
 

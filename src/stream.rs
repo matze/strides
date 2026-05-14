@@ -15,12 +15,13 @@ use std::pin::Pin;
 use std::task::Poll;
 use std::time::Instant;
 
+use crossterm::{cursor, QueueableCommand};
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 
 use crate::bar::Bar;
 use crate::spinner::Ticks;
-use crate::term::clear_line;
+use crate::term::{clear_line, CursorGuard};
 use crate::Theme;
 
 /// Builder returned by [`StreamExt::progress`].
@@ -44,7 +45,7 @@ pub struct StreamProgressBuilder<'a, S, F, M> {
     with_elapsed_time: bool,
     start: Option<Instant>,
     render_buf: String,
-    is_tty: bool,
+    guard: CursorGuard,
 }
 
 impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
@@ -84,7 +85,7 @@ impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
             with_elapsed_time: self.with_elapsed_time,
             start: self.start,
             render_buf: self.render_buf,
-            is_tty: self.is_tty,
+            guard: self.guard,
         }
     }
 }
@@ -116,8 +117,10 @@ where
             Poll::Ready(Some(item)) => {
                 this.current += 1;
 
-                if this.is_tty {
-                    let _ = clear_line(&mut std::io::stdout());
+                if this.guard.is_tty {
+                    let mut stdout = std::io::stdout();
+                    let _ = clear_line(&mut stdout);
+                    let _ = stdout.queue(cursor::Hide);
 
                     if this.with_elapsed_time {
                         let elapsed = this.start.get_or_insert_with(Instant::now).elapsed();
@@ -144,9 +147,11 @@ where
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                if this.is_tty {
-                    let _ = clear_line(&mut std::io::stdout());
-                    std::io::stdout().flush().expect("flushing");
+                if this.guard.is_tty {
+                    let mut stdout = std::io::stdout();
+                    let _ = clear_line(&mut stdout);
+                    let _ = stdout.queue(cursor::Show);
+                    stdout.flush().expect("flushing");
                 }
                 Poll::Ready(None)
             }
@@ -214,7 +219,9 @@ pub trait StreamExt: Stream {
             with_elapsed_time: false,
             start: None,
             render_buf: String::new(),
-            is_tty: std::io::stdout().is_terminal(),
+            guard: CursorGuard {
+                is_tty: std::io::stdout().is_terminal(),
+            },
         }
     }
 }

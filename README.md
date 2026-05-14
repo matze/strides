@@ -34,26 +34,59 @@ variants.
 
 ## Example
 
-Three concurrently running futures with a customized spinner and elapsed time:
+This example demonstrates how to animate single futures, a group of futures and
+a stream. Run it with `cargo run --example readme`.
 
 ```rust
 use std::time::Duration;
+
 use async_io::Timer;
-use futures_lite::{StreamExt, future};
-use strides::future::{FutureExt, Group};
-use strides::spinner;
+use futures_lite::StreamExt;
+use strides::spinner::styles::{DOTS_3, SAND};
 
-let mut group = Group::new(spinner::styles::DOTS_3)
-    .with_spinner_style(owo_colors::Style::new().bright_purple().bold())
-    .with_elapsed_time(true);
+async fn animate_simple_future() {
+    use strides::future::FutureExt as _;
 
-group.push(Timer::after(Duration::from_secs(1)).with_label("one second"));
-group.push(Timer::after(Duration::from_secs(2)).with_label("two seconds"));
-group.push(Timer::after(Duration::from_secs(3)).with_label("three seconds"));
+    Timer::after(Duration::from_secs(2))
+        .progress(DOTS_3)
+        .with_label("some work going on for two seconds")
+        .await;
+}
 
-future::block_on(async {
+async fn animate_two_futures_concurrently() {
+    use strides::future::{FutureExt as _, Group};
+
+    let mut group = Group::new(SAND).with_elapsed_time(true);
+    group.push(Timer::after(Duration::from_secs(2)).with_label("one second"));
+    group.push(Timer::after(Duration::from_secs(3)).with_label("two seconds"));
+
     group.for_each(|_| {}).await;
-});
+}
+
+async fn animate_stream() {
+    use strides::stream::StreamExt as _;
+
+    let theme = strides::Theme::default()
+        .with_spinner(DOTS_3)
+        .with_bar(strides::bar::styles::THIN_LINE);
+
+    futures_lite::stream::iter(0..100)
+        .progress(theme, |_, item| *item as f64 / 100.0)
+        .then(|item| async move {
+            Timer::after(Duration::from_millis(20)).await;
+            item
+        })
+        .for_each(|_| {})
+        .await;
+}
+
+fn main() {
+    futures_lite::future::block_on(async {
+        animate_simple_future().await;
+        animate_two_futures_concurrently().await;
+        animate_stream().await;
+    })
+}
 ```
 
 See the [examples](./examples/) directory for more elaborate uses including

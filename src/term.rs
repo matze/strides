@@ -10,9 +10,8 @@ use std::io::{IsTerminal, Write};
 use crossterm::{cursor, terminal, QueueableCommand};
 
 /// Clear the current line and move the cursor to the first column.
-pub(crate) fn clear_line(stdout: &mut std::io::Stdout) -> std::io::Result<()> {
-    stdout
-        .queue(terminal::Clear(terminal::ClearType::CurrentLine))?
+pub(crate) fn clear_line<W: Write>(w: &mut W) -> std::io::Result<()> {
+    w.queue(terminal::Clear(terminal::ClearType::CurrentLine))?
         .queue(cursor::MoveToColumn(0))?;
 
     Ok(())
@@ -27,7 +26,7 @@ pub(crate) struct CursorGuard {
 impl Drop for CursorGuard {
     fn drop(&mut self) {
         if self.is_tty {
-            let mut stdout = std::io::stdout();
+            let mut stdout = std::io::stdout().lock();
             let _ = clear_line(&mut stdout);
             let _ = stdout.queue(cursor::Show);
             let _ = stdout.flush();
@@ -44,7 +43,7 @@ impl Drop for CursorGuard {
 /// When stdout is not a terminal (e.g. redirected to a file or piped to another program) this is
 /// a no-op, so signal handlers can call it unconditionally.
 pub fn reset() -> std::io::Result<()> {
-    let mut stdout = std::io::stdout();
+    let mut stdout = std::io::stdout().lock();
     if !stdout.is_terminal() {
         return Ok(());
     }

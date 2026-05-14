@@ -310,7 +310,7 @@ where
         if this.is_tty && this.dirty && !matches!(item, Poll::Ready(None)) {
             this.dirty = false;
 
-            let mut stdout = std::io::stdout();
+            let mut stdout = std::io::stdout().lock();
             let _ = stdout.queue(cursor::Hide);
 
             let active_count = this.tasks.iter().filter(|t| t.is_some()).count();
@@ -333,7 +333,8 @@ where
 
                 this.render_buf.clear();
                 this.layout.render(&ctx, &mut this.render_buf);
-                println!("{}", this.render_buf);
+                let _ = stdout.write_all(this.render_buf.as_bytes());
+                let _ = stdout.write_all(b"\n");
             }
 
             // The previous render may have drawn more lines than we just did. Clear those leftovers
@@ -342,7 +343,7 @@ where
 
             for _ in 0..stale_lines {
                 let _ = clear_line(&mut stdout);
-                println!();
+                let _ = stdout.write_all(b"\n");
             }
 
             this.rendered_lines = active_count;

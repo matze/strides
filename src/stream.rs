@@ -121,10 +121,6 @@ where
                 this.current += 1;
 
                 if this.guard.is_tty {
-                    let mut stdout = std::io::stdout();
-                    let _ = clear_line(&mut stdout);
-                    let _ = stdout.queue(cursor::Hide);
-
                     let elapsed = if this.with_elapsed_time {
                         this.start.get_or_insert_with(Instant::now).elapsed()
                     } else {
@@ -148,16 +144,19 @@ where
 
                     this.render_buf.clear();
                     this.layout.render(&ctx, &mut this.render_buf);
-                    print!("{}", this.render_buf);
 
-                    let _ = std::io::stdout().flush();
+                    let mut stdout = std::io::stdout().lock();
+                    let _ = clear_line(&mut stdout);
+                    let _ = stdout.queue(cursor::Hide);
+                    let _ = stdout.write_all(this.render_buf.as_bytes());
+                    let _ = stdout.flush();
                 }
 
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
                 if this.guard.is_tty {
-                    let mut stdout = std::io::stdout();
+                    let mut stdout = std::io::stdout().lock();
                     let _ = clear_line(&mut stdout);
                     let _ = stdout.queue(cursor::Show);
                     let _ = stdout.flush();

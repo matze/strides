@@ -14,7 +14,9 @@ dependencies:
 
 steps:
   - name: "Test"
-    command: "cargo nextest run"
+    command: |
+      cargo nextest run
+      cargo test --doc
 
   - name: "Format"
     command: "cargo fmt --check"

@@ -65,10 +65,10 @@
 //! its state, which is either in-progress or done. The return value double acts as a
 //! [`ProgressBuilder`](crate::future::ProgressBuilder) for further customization of the animation:
 //!
-//! - [`with_message`](crate::future::ProgressBuilder::with_message) sets a static message,
+//! - [`with_label`](crate::future::ProgressBuilder::with_label) sets a static label,
 //! - [`with_messages`](crate::future::ProgressBuilder::with_messages) installs a
 //!   [`Stream`](futures_lite::Stream) whose values replace the displayed message as they arrive,
-//! - [`with_fraction`](crate::future::ProgressBuilder::with_fraction) drives the progress bar from a
+//! - [`with_progress`](crate::future::ProgressBuilder::with_progress) drives the progress bar from a
 //!   `Stream<Item = f64>`.
 //!
 //! ```rust
@@ -80,7 +80,7 @@
 //! // Simulate work by waiting for three seconds.
 //! futures_timer::Delay::new(std::time::Duration::from_secs(3))
 //!     .progress(DOTS_3)
-//!     .with_message("this will take some time")
+//!     .with_label("this will take some time")
 //!     .await;
 //! # }
 //! # );

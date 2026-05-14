@@ -2,9 +2,9 @@
 //!
 //! Import [`FutureExt`] to wrap any [`Future`] with a spinner, optional bar, and message via
 //! [`progress()`](FutureExt::progress). The returned [`ProgressBuilder`] composes optional
-//! capabilities via [`with_message()`](ProgressBuilder::with_message),
+//! capabilities via [`with_label()`](ProgressBuilder::with_label),
 //! [`with_messages()`](ProgressBuilder::with_messages) and
-//! [`with_fraction()`](ProgressBuilder::with_fraction). For multiple concurrent futures, use
+//! [`with_progress()`](ProgressBuilder::with_progress). For multiple concurrent futures, use
 //! [`Group`] which renders one line per task; see its documentation for an example.
 
 /// Concurrent futures rendered as one line per task. See [`Group`] for the entry point.
@@ -28,11 +28,11 @@ use crate::Theme;
 
 /// Builder returned by [`FutureExt::progress`].
 ///
-/// Holds the wrapped future together with the theme and optional capabilities — a static message, a
+/// Holds the wrapped future together with the theme and optional capabilities — a static label, a
 /// stream of dynamic messages, and a stream of progress fractions. The builder implements
 /// [`Future`] so `.await` drives the rendering loop and resolves to the wrapped future's output.
 ///
-/// The type parameters `M` and `P` track the message and fraction stream types respectively. They
+/// The type parameters `M` and `P` track the message and progress stream types respectively. They
 /// default to [`Pending`] (a ZST that never yields) so the bare `fut.progress(theme).await` path
 /// allocates nothing beyond the spinner [`Ticks`] state.
 pub struct ProgressBuilder<'a, F, M, P> {
@@ -41,22 +41,22 @@ pub struct ProgressBuilder<'a, F, M, P> {
     bar_width: usize,
     ticks: Ticks<'a>,
     messages: M,
-    fraction: P,
+    progress: P,
     spinner_char: Option<char>,
-    message: Option<String>,
-    current_fraction: f64,
+    label: Option<String>,
+    current_progress: f64,
     dirty: bool,
     render_buf: String,
     is_tty: bool,
 }
 
 impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
-    /// Display a static `message` while the future is pending.
+    /// Display a static `label` while the future is pending.
     ///
     /// If [`with_messages`](Self::with_messages) is also supplied, this value is shown until the
     /// first item from the stream replaces it.
-    pub fn with_message(mut self, message: impl Display) -> Self {
-        self.message = Some(message.to_string());
+    pub fn with_label(mut self, label: impl Display) -> Self {
+        self.label = Some(label.to_string());
         self.dirty = true;
         self
     }
@@ -64,7 +64,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
     /// Replace the displayed message each time `messages` yields a value.
     ///
     /// When the stream is exhausted the last value remains visible. If
-    /// [`with_message`](Self::with_message) was also called, its text is shown until the first
+    /// [`with_label`](Self::with_label) was also called, its text is shown until the first
     /// stream item arrives.
     pub fn with_messages<S>(self, messages: S) -> ProgressBuilder<'a, F, S, P>
     where
@@ -77,10 +77,10 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             bar_width: self.bar_width,
             ticks: self.ticks,
             messages,
-            fraction: self.fraction,
+            progress: self.progress,
             spinner_char: self.spinner_char,
-            message: self.message,
-            current_fraction: self.current_fraction,
+            label: self.label,
+            current_progress: self.current_progress,
             dirty: self.dirty,
             render_buf: self.render_buf,
             is_tty: self.is_tty,
@@ -92,7 +92,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
     /// The latest value wins, so emitting at a high rate is fine. The bar's style and width are
     /// taken from the [`Theme`] passed to [`FutureExt::progress`]. If the theme has no bar
     /// configured nothing is rendered.
-    pub fn with_fraction<S>(self, fraction: S) -> ProgressBuilder<'a, F, M, S>
+    pub fn with_progress<S>(self, progress: S) -> ProgressBuilder<'a, F, M, S>
     where
         S: Stream<Item = f64> + Unpin,
     {
@@ -102,10 +102,10 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             bar_width: self.bar_width,
             ticks: self.ticks,
             messages: self.messages,
-            fraction,
+            progress,
             spinner_char: self.spinner_char,
-            message: self.message,
-            current_fraction: self.current_fraction,
+            label: self.label,
+            current_progress: self.current_progress,
             dirty: self.dirty,
             render_buf: self.render_buf,
             is_tty: self.is_tty,
@@ -131,12 +131,12 @@ where
         }
 
         while let Poll::Ready(Some(msg)) = Pin::new(&mut this.messages).poll_next(cx) {
-            this.message = Some(msg.to_string());
+            this.label = Some(msg.to_string());
             this.dirty = true;
         }
 
-        while let Poll::Ready(Some(f)) = Pin::new(&mut this.fraction).poll_next(cx) {
-            this.current_fraction = f.clamp(0.0, 1.0);
+        while let Poll::Ready(Some(f)) = Pin::new(&mut this.progress).poll_next(cx) {
+            this.current_progress = f.clamp(0.0, 1.0);
             this.dirty = true;
         }
 
@@ -156,15 +156,15 @@ where
                     this.bar.render_into(
                         &mut this.render_buf,
                         this.bar_width,
-                        this.current_fraction,
+                        this.current_progress,
                     );
 
                     if !this.render_buf.is_empty() {
                         print!("{} ", this.render_buf);
                     }
 
-                    if let Some(message) = &this.message {
-                        print!("{message}");
+                    if let Some(label) = &this.label {
+                        print!("{label}");
                     }
 
                     std::io::stdout().flush().expect("flushing");
@@ -193,9 +193,9 @@ pub trait FutureExt: Future {
     ///
     /// `theme` accepts a [`Theme`] or a bare [`Spinner`](crate::spinner::Spinner) (converted via
     /// `Into`). Without further configuration, the builder renders only the spinner while the
-    /// future is pending. Use [`with_message`](ProgressBuilder::with_message),
+    /// future is pending. Use [`with_label`](ProgressBuilder::with_label),
     /// [`with_messages`](ProgressBuilder::with_messages) and
-    /// [`with_fraction`](ProgressBuilder::with_fraction) to add text and bar progress.
+    /// [`with_progress`](ProgressBuilder::with_progress) to add text and bar progress.
     ///
     /// # Example
     ///
@@ -206,7 +206,7 @@ pub trait FutureExt: Future {
     /// # futures_lite::future::block_on(async {
     /// let result = std::pin::pin!(async { 42 })
     ///     .progress(DOTS_3)
-    ///     .with_message("computing …")
+    ///     .with_label("computing …")
     ///     .await;
     /// # });
     /// ```
@@ -226,10 +226,10 @@ pub trait FutureExt: Future {
             bar_width,
             ticks: theme.spinner.ticks(),
             messages: stream::pending(),
-            fraction: stream::pending(),
+            progress: stream::pending(),
             spinner_char: None,
-            message: None,
-            current_fraction: 0.0,
+            label: None,
+            current_progress: 0.0,
             dirty: true,
             render_buf: String::new(),
             is_tty: std::io::stdout().is_terminal(),

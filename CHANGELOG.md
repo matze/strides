@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- Rename `ProgressBuilder::with_message` to `with_label` and
+  `ProgressBuilder::with_fraction` to `with_progress`, so the future progress
+  API uses the same vocabulary as `Task` and the `FutureExt` setters.
+
+### Changes
+
+- Add `Bar::render_into` to append into a caller-supplied `String` instead of
+  allocating a new one, for hot paths that reuse a buffer across frames.
+- Suppress all output when stdout is not a TTY.
+- Lower dependency version requirements and set the minimum supported Rust
+  version to 1.85.
+
 
 ## 0.4.0
 

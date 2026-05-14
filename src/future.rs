@@ -17,6 +17,7 @@ use std::future::Future;
 use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Instant;
 
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
@@ -45,6 +46,8 @@ pub struct ProgressBuilder<'a, F, M, P> {
     spinner_char: Option<char>,
     label: Option<String>,
     current_progress: f64,
+    with_elapsed_time: bool,
+    start: Option<Instant>,
     dirty: bool,
     render_buf: String,
     is_tty: bool,
@@ -81,10 +84,19 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             spinner_char: self.spinner_char,
             label: self.label,
             current_progress: self.current_progress,
+            with_elapsed_time: self.with_elapsed_time,
+            start: self.start,
             dirty: self.dirty,
             render_buf: self.render_buf,
             is_tty: self.is_tty,
         }
+    }
+
+    /// Prepend `[Xs]` (seconds since the future was first polled) to the line.
+    pub fn with_elapsed_time(mut self) -> Self {
+        self.with_elapsed_time = true;
+        self.dirty = true;
+        self
     }
 
     /// Drive the progress bar from a stream of fractions in `0.0..=1.0`.
@@ -106,6 +118,8 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             spinner_char: self.spinner_char,
             label: self.label,
             current_progress: self.current_progress,
+            with_elapsed_time: self.with_elapsed_time,
+            start: self.start,
             dirty: self.dirty,
             render_buf: self.render_buf,
             is_tty: self.is_tty,
@@ -147,6 +161,11 @@ where
                 Poll::Pending if this.dirty => {
                     this.dirty = false;
                     let _ = clear_line(&mut std::io::stdout());
+
+                    if this.with_elapsed_time {
+                        let elapsed = this.start.get_or_insert_with(Instant::now).elapsed();
+                        print!("[{:.2}s] ", elapsed.as_secs_f64());
+                    }
 
                     if let Some(spinner) = &this.spinner_char {
                         print!("{spinner} ");
@@ -230,6 +249,8 @@ pub trait FutureExt: Future {
             spinner_char: None,
             label: None,
             current_progress: 0.0,
+            with_elapsed_time: false,
+            start: None,
             dirty: true,
             render_buf: String::new(),
             is_tty: std::io::stdout().is_terminal(),

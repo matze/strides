@@ -12,7 +12,7 @@ fn main() {
     // dots to represent progress.
     let mut group = Group::new(spinner::styles::DOTS_3)
         .with_spinner_style(owo_colors::Style::new().bright_purple().bold())
-        .with_elapsed_time(true);
+        .with_elapsed_time();
 
     // Add three futures with varying completion durations.
     group.push(Timer::after(Duration::from_secs(1)).with_label("one second"));

@@ -230,9 +230,9 @@ where
         self
     }
 
-    /// When `true`, prepend `[Xs]` (seconds since the group was first polled) to each line.
-    pub fn with_elapsed_time(mut self, with_elapsed_time: bool) -> Self {
-        self.with_elapsed_time = with_elapsed_time;
+    /// Prepend `[Xs]` (seconds since the group was first polled) to each line.
+    pub fn with_elapsed_time(mut self) -> Self {
+        self.with_elapsed_time = true;
         self
     }
 

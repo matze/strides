@@ -13,6 +13,7 @@ use std::fmt::Display;
 use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::Poll;
+use std::time::Instant;
 
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
@@ -40,6 +41,8 @@ pub struct StreamProgressBuilder<'a, S, F, M> {
     current: usize,
     spinner_char: Option<char>,
     message: Option<String>,
+    with_elapsed_time: bool,
+    start: Option<Instant>,
     render_buf: String,
     is_tty: bool,
 }
@@ -51,6 +54,12 @@ impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
     /// first item from the stream replaces it.
     pub fn with_label(mut self, label: impl Display) -> Self {
         self.message = Some(label.to_string());
+        self
+    }
+
+    /// Prepend `[Xs]` (seconds since the first item flowed through) to the line.
+    pub fn with_elapsed_time(mut self) -> Self {
+        self.with_elapsed_time = true;
         self
     }
 
@@ -72,6 +81,8 @@ impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
             current: self.current,
             spinner_char: self.spinner_char,
             message: self.message,
+            with_elapsed_time: self.with_elapsed_time,
+            start: self.start,
             render_buf: self.render_buf,
             is_tty: self.is_tty,
         }
@@ -107,6 +118,11 @@ where
 
                 if this.is_tty {
                     let _ = clear_line(&mut std::io::stdout());
+
+                    if this.with_elapsed_time {
+                        let elapsed = this.start.get_or_insert_with(Instant::now).elapsed();
+                        print!("[{:.2}s] ", elapsed.as_secs_f64());
+                    }
 
                     if let Some(spinner) = &this.spinner_char {
                         print!("{spinner} ");
@@ -195,6 +211,8 @@ pub trait StreamExt: Stream {
             current: 0,
             spinner_char: None,
             message: None,
+            with_elapsed_time: false,
+            start: None,
             render_buf: String::new(),
             is_tty: std::io::stdout().is_terminal(),
         }

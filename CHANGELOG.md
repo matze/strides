@@ -7,11 +7,15 @@
 - Rename `ProgressBuilder::with_message` to `with_label` and
   `ProgressBuilder::with_fraction` to `with_progress`, so the future progress
   API uses the same vocabulary as `Task` and the `FutureExt` setters.
+- `Group::with_elapsed_time` no longer takes a `bool`. It is off by default and
+  the no-argument builder method enables it.
 
 ### Changes
 
 - Add `StreamProgressBuilder::with_label` to display a static label, mirroring
   `ProgressBuilder::with_label` on the future side.
+- Add `with_elapsed_time` to `ProgressBuilder` and `StreamProgressBuilder` to
+  prepend `[Xs]` elapsed time to the line, mirroring `Group`.
 - Add `Bar::render_into` to append into a caller-supplied `String` instead of
   allocating a new one, for hot paths that reuse a buffer across frames.
 - Suppress all output when stdout is not a TTY.

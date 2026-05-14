@@ -1,17 +1,14 @@
-//! strides is an async-first crate to support building command line tools which display progress to
-//! the user. The purpose is similar to that of the widely used indicatif crate but focuses on
-//! integrating with async futures and streams and drive progress animations based on polling
-//! state.
-//!
-//! Instead of integrating progress bar and spinner UI elements along an asynchronous program,
-//! strides provides utilities to integrate these elements as part of the [`Future`] and
-//! [`Stream`](futures_lite::Stream) abstractions.
+//! strides is an *async-first* crate to support building command line tools which display progress
+//! to the user. The purpose is similar to that of the widely used indicatif crate but focuses on
+//! integrating with async futures and streams and drive progress animations based on polling state.
+//! For this strides provides utilities to integrate UI elements as part of the [`Future`] and
+//! [`Stream`] abstractions.
 //!
 //! ## Spinners
 //!
 //! A spinner is a UI element that represents ongoing work. It is usually iconified as a circular
 //! motion but anything that streams Unicode characters can be used. To create a spinner, import the
-//! [`Spinner`](crate::spinner::Spinner) struct and pass it a string slice:
+//! [`Spinner`] struct and pass it a string slice:
 //!
 //! ```rust
 //! let abc = strides::spinner::Spinner::new("abc");
@@ -27,20 +24,25 @@
 //!
 //! ## Bars
 //!
-//! A [`Bar`](crate::bar::Bar) renders fractional progress as a strip of characters. It is defined
-//! by two characters, one for the empty portion and one for the filled portion. Create one with
-//! [`Bar::new()`](crate::bar::Bar::new) or pick a pre-defined variant from [`bar::styles`]:
+//! A [`Bar`] renders fractional progress as a strip of characters. It is defined by two characters,
+//! one for the empty portion and one for the filled portion. In addition, optional borders,
+//! in-between separator, and per-portion colors can be configured via the builder methods on
+//! [`Bar`].
+//!
+//! Create a new bar with [`Bar::new()`](crate::bar::Bar::new) or pick a pre-defined variant from
+//! [`bar::styles`]:
 //!
 //! ```rust
+//! // This customizes the pre-defined thin line style with additional borders and colors for the
+//! // filled portion.
 //! let bar = strides::bar::styles::THIN_LINE
 //!     .with_border("[", "]")
 //!     .with_filled_style(owo_colors::Style::new().bright_purple());
 //! ```
 //!
-//! Borders, an optional in-between separator, and per-portion colors are configured via the builder
-//! methods on [`Bar`](crate::bar::Bar). The bar is attached to a [`Theme`] with
-//! [`with_bar()`](crate::Theme::with_bar); width defaults to the terminal size and can be
-//! overridden with [`with_bar_width()`](crate::Theme::with_bar_width).
+//! The bar is attached to a [`Theme`] with [`with_bar()`](crate::Theme::with_bar). The bar width
+//! defaults to the terminal size and can be overridden with
+//! [`with_bar_width()`](crate::Theme::with_bar_width).
 //!
 //! ## Themes
 //!
@@ -59,31 +61,32 @@
 //! ## Futures
 //!
 //! Import the [`FutureExt`](crate::future::FutureExt) extension trait and call
-//! [`progress()`](crate::future::FutureExt::progress) on any [`Future`] to obtain a
-//! [`ProgressBuilder`](crate::future::ProgressBuilder). Capabilities compose freely:
-//! [`with_message`](crate::future::ProgressBuilder::with_message) sets a static message,
-//! [`with_messages`](crate::future::ProgressBuilder::with_messages) installs a
-//! [`Stream`](futures_lite::Stream) whose values replace the displayed message as they arrive, and
-//! [`with_fraction`](crate::future::ProgressBuilder::with_fraction) drives the progress bar from a
-//! `Stream<Item = f64>`.
+//! [`progress()`](crate::future::FutureExt::progress) with a [`Theme`] on any [`Future`] to animate
+//! its state, which is either in-progress or done. The return value double acts as a
+//! [`ProgressBuilder`](crate::future::ProgressBuilder) for further customization of the animation:
 //!
-//! ```rust,no_run
+//! - [`with_message`](crate::future::ProgressBuilder::with_message) sets a static message,
+//! - [`with_messages`](crate::future::ProgressBuilder::with_messages) installs a
+//!   [`Stream`](futures_lite::Stream) whose values replace the displayed message as they arrive,
+//! - [`with_fraction`](crate::future::ProgressBuilder::with_fraction) drives the progress bar from a
+//!   `Stream<Item = f64>`.
+//!
+//! ```rust
 //! use strides::future::FutureExt;
 //! use strides::spinner::styles::DOTS_3;
-//! use std::time::Duration;
 //!
-//! # futures_lite::future::block_on(async {
-//! std::pin::pin!(async {
-//!    // Simulate work by waiting for three seconds.
-//!    futures_timer::Delay::new(Duration::from_secs(3)).await;
-//! })
-//! .progress(DOTS_3)
-//! .with_message("this will take some time")
-//! .await;
-//! # });
+//! # futures_lite::future::block_on(
+//! # async {
+//! // Simulate work by waiting for three seconds.
+//! futures_timer::Delay::new(std::time::Duration::from_secs(3))
+//!     .progress(DOTS_3)
+//!     .with_message("this will take some time")
+//!     .await;
+//! # }
+//! # );
 //! ```
 //!
-//! For multiple concurrent futures use [`future::Group`], which renders one line per task
+//! For multiple concurrent futures use [`Group`], which renders one line per task
 //! with optional per-task progress bars and dynamic messages.
 //!
 //! ## Streams
@@ -96,7 +99,7 @@
 //! accepts a [`with_messages`](crate::stream::StreamProgressBuilder::with_messages) stream for
 //! dynamic text.
 //!
-//! ```rust,no_run
+//! ```rust
 //! use futures_lite::{StreamExt as _, stream};
 //! use strides::stream::StreamExt;
 //! use strides::Theme;
@@ -121,6 +124,12 @@
 //! example, when the program's output is redirected to a file or piped to another command) progress
 //! rendering is suppressed entirely. Futures and streams still run to completion, but no spinner,
 //! bar, or message bytes are written.
+//!
+//! [`Future`]: std::future::Future
+//! [`Stream`]: futures_lite::Stream
+//! [`Group`]: crate::future::Group
+//! [`Spinner`]: crate::spinner::Spinner
+//! [`Bar`]: crate::bar::Bar
 
 pub mod bar;
 pub mod future;

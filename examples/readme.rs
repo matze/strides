@@ -17,8 +17,8 @@ async fn animate_two_futures_concurrently() {
     use strides::future::{FutureExt as _, Group};
 
     let mut group = Group::new(SAND).with_elapsed_time();
-    group.push(Timer::after(Duration::from_secs(2)).with_label("one second"));
-    group.push(Timer::after(Duration::from_secs(3)).with_label("two seconds"));
+    group.push(Timer::after(Duration::from_secs(2)).with_label("two seconds"));
+    group.push(Timer::after(Duration::from_secs(3)).with_label("three seconds"));
 
     group.for_each(|_| {}).await;
 }

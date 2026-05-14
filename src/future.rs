@@ -17,13 +17,14 @@ use std::future::Future;
 use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crossterm::{cursor, QueueableCommand};
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 
 use crate::bar::Bar;
+use crate::layout::{Layout, RenderContext};
 use crate::spinner::Ticks;
 use crate::term::{clear_line, CursorGuard};
 use crate::Theme;
@@ -51,6 +52,7 @@ pub struct ProgressBuilder<'a, F, M, P> {
     start: Option<Instant>,
     dirty: bool,
     render_buf: String,
+    layout: Layout,
     guard: CursorGuard,
 }
 
@@ -89,11 +91,12 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             start: self.start,
             dirty: self.dirty,
             render_buf: self.render_buf,
+            layout: self.layout,
             guard: self.guard,
         }
     }
 
-    /// Prepend `[Xs]` (seconds since the future was first polled) to the line.
+    /// Prepend the elapsed time (seconds since the future was first polled) to the line.
     pub fn with_elapsed_time(mut self) -> Self {
         self.with_elapsed_time = true;
         self.dirty = true;
@@ -123,6 +126,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
             start: self.start,
             dirty: self.dirty,
             render_buf: self.render_buf,
+            layout: self.layout,
             guard: self.guard,
         }
     }
@@ -165,29 +169,28 @@ where
                     let _ = clear_line(&mut stdout);
                     let _ = stdout.queue(cursor::Hide);
 
-                    if this.with_elapsed_time {
-                        let elapsed = this.start.get_or_insert_with(Instant::now).elapsed();
-                        print!("[{:.2}s] ", elapsed.as_secs_f64());
-                    }
+                    let elapsed = if this.with_elapsed_time {
+                        this.start.get_or_insert_with(Instant::now).elapsed()
+                    } else {
+                        Duration::ZERO
+                    };
 
-                    if let Some(spinner) = &this.spinner_char {
-                        print!("{spinner} ");
-                    }
+                    let ctx = RenderContext {
+                        spinner: this.spinner_char,
+                        elapsed,
+                        show_elapsed: this.with_elapsed_time,
+                        bar: &this.bar,
+                        bar_width: this.bar_width,
+                        progress: Some(this.current_progress),
+                        label: None,
+                        message: this.label.as_deref(),
+                        spinner_style: owo_colors::Style::new(),
+                        annotation_style: owo_colors::Style::new(),
+                    };
 
                     this.render_buf.clear();
-                    this.bar.render_into(
-                        &mut this.render_buf,
-                        this.bar_width,
-                        this.current_progress,
-                    );
-
-                    if !this.render_buf.is_empty() {
-                        print!("{} ", this.render_buf);
-                    }
-
-                    if let Some(label) = &this.label {
-                        print!("{label}");
-                    }
+                    this.layout.render(&ctx, &mut this.render_buf);
+                    print!("{}", this.render_buf);
 
                     let _ = std::io::stdout().flush();
                 }
@@ -258,6 +261,7 @@ pub trait FutureExt: Future {
             start: None,
             dirty: true,
             render_buf: String::new(),
+            layout: theme.layout,
             guard: CursorGuard {
                 is_tty: std::io::stdout().is_terminal(),
             },

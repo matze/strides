@@ -8,9 +8,9 @@ use std::{io::Write, pin::Pin};
 use crossterm::{cursor, QueueableCommand};
 use futures_lite::{FutureExt as _, Stream, StreamExt as _};
 use futures_util::stream::FuturesUnordered;
-use owo_colors::OwoColorize;
 
 use crate::bar::Bar;
+use crate::layout::{Layout, RenderContext};
 use crate::spinner::Ticks;
 use crate::term::{clear_line, reset};
 use crate::Theme;
@@ -180,8 +180,10 @@ pub struct Group<'a, F> {
     /// Number of lines printed by the previous render, used to clear leftovers when the
     /// active count shrinks.
     rendered_lines: usize,
-    /// Reusable buffer for [`Bar::render_into`], cleared and re-used across tasks within a poll.
+    /// Reusable buffer for rendering, cleared and re-used across tasks within a poll.
     render_buf: String,
+    /// Ordering and formatting of each rendered task line.
+    layout: Layout,
     /// `true` when stdout is a terminal at construction time. When false, every render path is
     /// skipped so redirected output (e.g. piping to a file) stays free of ANSI escapes.
     is_tty: bool,
@@ -214,6 +216,7 @@ where
             dirty: true,
             rendered_lines: 0,
             render_buf: String::new(),
+            layout: theme.layout,
             is_tty: std::io::stdout().is_terminal(),
         }
     }
@@ -315,33 +318,22 @@ where
             for task in this.tasks.iter().flatten() {
                 let _ = clear_line(&mut stdout);
 
-                if let Some(spinner) = &this.spinner {
-                    print!("{} ", spinner.style(this.spinner_style));
-                }
+                let ctx = RenderContext {
+                    spinner: this.spinner,
+                    elapsed,
+                    show_elapsed: this.with_elapsed_time,
+                    bar: &this.bar,
+                    bar_width: this.bar_width,
+                    progress: task.progress,
+                    label: task.label.as_deref(),
+                    message: task.message.as_deref(),
+                    spinner_style: this.spinner_style,
+                    annotation_style: this.annotation_style,
+                };
 
-                if this.with_elapsed_time {
-                    print!("[{:.2}s] ", elapsed.as_secs_f64());
-                }
-
-                if let Some(label) = &task.label {
-                    print!("{} ", label.style(this.annotation_style));
-                }
-
-                if let Some(progress) = task.progress {
-                    this.render_buf.clear();
-                    this.bar
-                        .render_into(&mut this.render_buf, this.bar_width, progress);
-
-                    if !this.render_buf.is_empty() {
-                        print!("{} ", this.render_buf);
-                    }
-                }
-
-                if let Some(message) = &task.message {
-                    println!("{message}");
-                } else {
-                    println!();
-                }
+                this.render_buf.clear();
+                this.layout.render(&ctx, &mut this.render_buf);
+                println!("{}", this.render_buf);
             }
 
             // The previous render may have drawn more lines than we just did. Clear those leftovers

@@ -9,9 +9,17 @@
   API uses the same vocabulary as `Task` and the `FutureExt` setters.
 - `Group::with_elapsed_time` no longer takes a `bool`. It is off by default and
   the no-argument builder method enables it.
+- The progress line layout is now unified across futures, streams and `Group`.
+  `Group`'s segment order changes (previously `spinner [elapsed] label bar
+  message`), and `with_elapsed_time` renders the elapsed time as `Xs` instead of
+  `[Xs]`. Restore borders with a custom `Layout` containing
+  `Segment::elapsed().with_border("[", "]")`.
 
 ### Changes
 
+- Add the `layout` module with `Layout`, `Segment` and `RenderContext` for
+  composable, type-safe control over progress-line segment order, spacing,
+  separators and per-segment formatting. Used with `Theme::with_layout`.
 - Add `StreamProgressBuilder::with_label` to display a static label, mirroring
   `ProgressBuilder::with_label` on the future side.
 - Add `with_elapsed_time` to `ProgressBuilder` and `StreamProgressBuilder` to

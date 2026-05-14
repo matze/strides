@@ -58,6 +58,25 @@
 //! A bare [`Spinner`](crate::spinner::Spinner) can also be passed directly wherever a
 //! [`Theme`] is expected.
 //!
+//! ## Layout
+//!
+//! The order, spacing and per-element formatting of a progress line is controlled by a [`Layout`],
+//! an ordered list of [`Segment`]s. [`Layout::DEFAULT`] renders elapsed time, spinner, label, bar
+//! and message. Segments with nothing to show are skipped, so spacing stays correct. Attach a
+//! custom layout with [`Theme::with_layout`]:
+//!
+//! ```rust
+//! use strides::layout::{Layout, Segment};
+//!
+//! let theme = strides::Theme::new().with_layout(
+//!     Layout::new(&[])
+//!         .with_segment(Segment::spinner())
+//!         .with_segment(Segment::elapsed().with_border("[", "]"))
+//!         .with_segment(Segment::bar())
+//!         .with_segment(Segment::message()),
+//! );
+//! ```
+//!
 //! ## Futures
 //!
 //! Import the [`FutureExt`](crate::future::FutureExt) extension trait and call
@@ -133,9 +152,11 @@
 
 pub mod bar;
 pub mod future;
+pub mod layout;
 pub mod spinner;
 pub mod stream;
 pub mod term;
 pub mod theme;
 
+pub use layout::{Layout, RenderContext, Segment};
 pub use theme::Theme;

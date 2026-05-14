@@ -91,7 +91,7 @@ fn main() {
 ```
 
 See the [examples](./examples/) directory for more elaborate uses including
-downloads, dynamic messages, and per-task progress bars.
+downloads, dynamic messages, per-task progress bars, and custom layouts.
 
 
 ## Minimum supported Rust version

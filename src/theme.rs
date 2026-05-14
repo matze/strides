@@ -16,6 +16,7 @@
 //! ```
 
 use crate::bar::Bar;
+use crate::layout::Layout;
 use crate::spinner::Spinner;
 
 /// Combined theme for progress display, bundling a [`Spinner`] and a [`Bar`].
@@ -27,6 +28,8 @@ pub struct Theme<'a> {
     pub(crate) bar: Bar<'a>,
     /// Width of the progress bar in characters.
     pub(crate) bar_width: Option<usize>,
+    /// Ordering and formatting of the rendered progress line.
+    pub(crate) layout: Layout,
 }
 
 impl Default for Theme<'_> {
@@ -36,13 +39,14 @@ impl Default for Theme<'_> {
 }
 
 impl<'a> Theme<'a> {
-    /// Create a new theme with an inactive spinner, no bar, and an
-    /// auto-detected bar width.
+    /// Create a new theme with an inactive spinner, no bar, an auto-detected bar
+    /// width and the default [`Layout`].
     pub const fn new() -> Self {
         Self {
             spinner: Spinner::inactive(),
             bar: Bar::empty(),
             bar_width: None,
+            layout: Layout::DEFAULT,
         }
     }
 
@@ -62,6 +66,12 @@ impl<'a> Theme<'a> {
     /// size (clamped to `10..=80`), falling back to `40` if the size cannot be detected.
     pub const fn with_bar_width(mut self, width: usize) -> Self {
         self.bar_width = Some(width);
+        self
+    }
+
+    /// Set the [`Layout`] controlling segment order, spacing and per-segment formatting.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 

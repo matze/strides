@@ -141,7 +141,7 @@ where
                         print!(" {message}");
                     }
 
-                    std::io::stdout().flush().expect("flushing");
+                    let _ = std::io::stdout().flush();
                 }
 
                 Poll::Ready(Some(item))
@@ -151,7 +151,7 @@ where
                     let mut stdout = std::io::stdout();
                     let _ = clear_line(&mut stdout);
                     let _ = stdout.queue(cursor::Show);
-                    stdout.flush().expect("flushing");
+                    let _ = stdout.flush();
                 }
                 Poll::Ready(None)
             }

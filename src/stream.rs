@@ -45,6 +45,15 @@ pub struct StreamProgressBuilder<'a, S, F, M> {
 }
 
 impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
+    /// Display a static `label` while items flow through.
+    ///
+    /// If [`with_messages`](Self::with_messages) is also supplied, this value is shown until the
+    /// first item from the stream replaces it.
+    pub fn with_label(mut self, label: impl Display) -> Self {
+        self.message = Some(label.to_string());
+        self
+    }
+
     /// Replace the displayed message each time `messages` yields a value.
     ///
     /// When the stream is exhausted the last value remains visible.

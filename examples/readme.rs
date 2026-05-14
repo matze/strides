@@ -32,6 +32,7 @@ async fn animate_stream() {
 
     futures_lite::stream::iter(0..100)
         .progress(theme, |_, item| *item as f64 / 100.0)
+        .with_label("streaming 100 items")
         .then(|item| async move {
             Timer::after(Duration::from_millis(20)).await;
             item

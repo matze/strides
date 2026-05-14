@@ -10,6 +10,8 @@
 
 ### Changes
 
+- Add `StreamProgressBuilder::with_label` to display a static label, mirroring
+  `ProgressBuilder::with_label` on the future side.
 - Add `Bar::render_into` to append into a caller-supplied `String` instead of
   allocating a new one, for hot paths that reuse a buffer across frames.
 - Suppress all output when stdout is not a TTY.

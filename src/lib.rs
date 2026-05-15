@@ -158,5 +158,7 @@ pub mod stream;
 pub mod term;
 pub mod theme;
 
+pub(crate) mod state;
+
 pub use layout::{Layout, RenderContext, Segment};
 pub use theme::Theme;

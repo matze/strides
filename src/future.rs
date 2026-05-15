@@ -14,18 +14,13 @@ pub use group::{Group, Task};
 
 use std::fmt::Display;
 use std::future::Future;
-use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
 
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 
-use crate::bar::Bar;
-use crate::layout::{Layout, RenderContext};
-use crate::spinner::Ticks;
-use crate::term::{self, clear_line, CursorGuard};
+use crate::state::State;
 use crate::Theme;
 
 /// Builder returned by [`FutureExt::progress`].
@@ -36,23 +31,12 @@ use crate::Theme;
 ///
 /// The type parameters `M` and `P` track the message and progress stream types respectively. They
 /// default to [`Pending`] (a ZST that never yields) so the bare `fut.progress(theme).await` path
-/// allocates nothing beyond the spinner [`Ticks`] state.
+/// allocates nothing beyond the spinner [`Ticks`](crate::spinner::Ticks) state.
 pub struct ProgressBuilder<'a, F, M, P> {
     inner: F,
-    bar: Bar<'a>,
-    bar_width: usize,
-    ticks: Ticks<'a>,
     messages: M,
     progress: P,
-    spinner_char: Option<char>,
-    label: Option<String>,
-    current_progress: f64,
-    with_elapsed_time: bool,
-    start: Option<Instant>,
-    dirty: bool,
-    render_buf: String,
-    layout: Layout,
-    guard: CursorGuard,
+    state: State<'a>,
 }
 
 impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
@@ -61,8 +45,7 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
     /// If [`with_messages`](Self::with_messages) is also supplied, this value is shown until the
     /// first item from the stream replaces it.
     pub fn with_label(mut self, label: impl Display) -> Self {
-        self.label = Some(label.to_string());
-        self.dirty = true;
+        self.state.set_message(label.to_string());
         self
     }
 
@@ -78,27 +61,15 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
     {
         ProgressBuilder {
             inner: self.inner,
-            bar: self.bar,
-            bar_width: self.bar_width,
-            ticks: self.ticks,
             messages,
             progress: self.progress,
-            spinner_char: self.spinner_char,
-            label: self.label,
-            current_progress: self.current_progress,
-            with_elapsed_time: self.with_elapsed_time,
-            start: self.start,
-            dirty: self.dirty,
-            render_buf: self.render_buf,
-            layout: self.layout,
-            guard: self.guard,
+            state: self.state,
         }
     }
 
     /// Prepend the elapsed time (seconds since the future was first polled) to the line.
     pub fn with_elapsed_time(mut self) -> Self {
-        self.with_elapsed_time = true;
-        self.dirty = true;
+        self.state.enable_elapsed_time();
         self
     }
 
@@ -113,20 +84,9 @@ impl<'a, F, M, P> ProgressBuilder<'a, F, M, P> {
     {
         ProgressBuilder {
             inner: self.inner,
-            bar: self.bar,
-            bar_width: self.bar_width,
-            ticks: self.ticks,
             messages: self.messages,
             progress,
-            spinner_char: self.spinner_char,
-            label: self.label,
-            current_progress: self.current_progress,
-            with_elapsed_time: self.with_elapsed_time,
-            start: self.start,
-            dirty: self.dirty,
-            render_buf: self.render_buf,
-            layout: self.layout,
-            guard: self.guard,
+            state: self.state,
         }
     }
 }
@@ -143,64 +103,21 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        if let Poll::Ready(spinner) = Pin::new(&mut this.ticks).poll_next(cx) {
-            this.spinner_char = spinner;
-            this.dirty = true;
-        }
+        this.state.poll_spinner(cx);
 
         while let Poll::Ready(Some(msg)) = Pin::new(&mut this.messages).poll_next(cx) {
-            this.label = Some(msg.to_string());
-            this.dirty = true;
+            this.state.set_message(msg.to_string());
         }
 
         while let Poll::Ready(Some(f)) = Pin::new(&mut this.progress).poll_next(cx) {
-            this.current_progress = f.clamp(0.0, 1.0);
-            this.dirty = true;
+            this.state.set_progress(f.clamp(0.0, 1.0));
         }
 
         let item = Pin::new(&mut this.inner).poll(cx);
 
-        if this.guard.is_tty {
-            match item {
-                Poll::Pending if this.dirty => {
-                    this.dirty = false;
-
-                    let elapsed = if this.with_elapsed_time {
-                        this.start.get_or_insert_with(Instant::now).elapsed()
-                    } else {
-                        Duration::ZERO
-                    };
-
-                    let ctx = RenderContext {
-                        spinner: this.spinner_char,
-                        elapsed,
-                        show_elapsed: this.with_elapsed_time,
-                        bar: &this.bar,
-                        bar_width: this.bar_width,
-                        progress: Some(this.current_progress),
-                        label: None,
-                        message: this.label.as_deref(),
-                        spinner_style: owo_colors::Style::new(),
-                        annotation_style: owo_colors::Style::new(),
-                    };
-
-                    this.render_buf.clear();
-                    this.layout.render(&ctx, &mut this.render_buf);
-
-                    let mut stdout = std::io::stdout().lock();
-                    let _ = clear_line(&mut stdout);
-                    let _ = stdout.write_all(term::HIDE_CURSOR);
-                    let _ = stdout.write_all(this.render_buf.as_bytes());
-                    let _ = stdout.flush();
-                }
-                Poll::Ready(_) => {
-                    let mut stdout = std::io::stdout().lock();
-                    let _ = clear_line(&mut stdout);
-                    let _ = stdout.write_all(term::SHOW_CURSOR);
-                    let _ = stdout.flush();
-                }
-                _ => {}
-            }
+        match item {
+            Poll::Pending => this.state.render_if_dirty(),
+            Poll::Ready(_) => this.state.finish(),
         }
 
         item
@@ -243,27 +160,16 @@ pub trait FutureExt: Future {
     where
         Self: Sized,
     {
-        let theme = theme.into();
-        let bar_width = theme.effective_bar_width();
+        let mut state = State::new(theme.into());
+        // Preserve the previous behaviour where the bar is always present (starting at 0%) even
+        // when no progress stream is attached.
+        state.set_progress(0.0);
 
         ProgressBuilder {
             inner: self,
-            bar: theme.bar,
-            bar_width,
-            ticks: theme.spinner.ticks(),
             messages: stream::pending(),
             progress: stream::pending(),
-            spinner_char: None,
-            label: None,
-            current_progress: 0.0,
-            with_elapsed_time: false,
-            start: None,
-            dirty: true,
-            render_buf: String::new(),
-            layout: theme.layout,
-            guard: CursorGuard {
-                is_tty: std::io::stdout().is_terminal(),
-            },
+            state,
         }
     }
 

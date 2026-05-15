@@ -10,18 +10,13 @@
 //! [`with_messages`](StreamProgressBuilder::with_messages).
 
 use std::fmt::Display;
-use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::Poll;
-use std::time::{Duration, Instant};
 
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 
-use crate::bar::Bar;
-use crate::layout::{Layout, RenderContext};
-use crate::spinner::Ticks;
-use crate::term::{self, clear_line, CursorGuard};
+use crate::state::State;
 use crate::Theme;
 
 /// Builder returned by [`StreamExt::progress`].
@@ -34,19 +29,10 @@ use crate::Theme;
 /// never yields).
 pub struct StreamProgressBuilder<'a, S, F, M> {
     inner: S,
-    bar: Bar<'a>,
-    bar_width: usize,
-    ticks: Ticks<'a>,
     fraction_fn: F,
     messages: M,
     current: usize,
-    spinner_char: Option<char>,
-    message: Option<String>,
-    with_elapsed_time: bool,
-    start: Option<Instant>,
-    render_buf: String,
-    layout: Layout,
-    guard: CursorGuard,
+    state: State<'a>,
 }
 
 impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
@@ -55,13 +41,13 @@ impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
     /// If [`with_messages`](Self::with_messages) is also supplied, this value is shown until the
     /// first item from the stream replaces it.
     pub fn with_label(mut self, label: impl Display) -> Self {
-        self.message = Some(label.to_string());
+        self.state.set_message(label.to_string());
         self
     }
 
     /// Prepend `[Xs]` (seconds since the first item flowed through) to the line.
     pub fn with_elapsed_time(mut self) -> Self {
-        self.with_elapsed_time = true;
+        self.state.enable_elapsed_time();
         self
     }
 
@@ -75,19 +61,10 @@ impl<'a, S, F, M> StreamProgressBuilder<'a, S, F, M> {
     {
         StreamProgressBuilder {
             inner: self.inner,
-            bar: self.bar,
-            bar_width: self.bar_width,
-            ticks: self.ticks,
             fraction_fn: self.fraction_fn,
             messages,
             current: self.current,
-            spinner_char: self.spinner_char,
-            message: self.message,
-            with_elapsed_time: self.with_elapsed_time,
-            start: self.start,
-            render_buf: self.render_buf,
-            layout: self.layout,
-            guard: self.guard,
+            state: self.state,
         }
     }
 }
@@ -107,59 +84,22 @@ where
     ) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        if let Poll::Ready(spinner) = Pin::new(&mut this.ticks).poll_next(cx) {
-            this.spinner_char = spinner;
-        }
+        this.state.poll_spinner(cx);
 
         while let Poll::Ready(Some(msg)) = Pin::new(&mut this.messages).poll_next(cx) {
-            this.message = Some(msg.to_string());
+            this.state.set_message(msg.to_string());
         }
 
         match Pin::new(&mut this.inner).poll_next(cx) {
             Poll::Ready(Some(item)) => {
                 this.current += 1;
-
-                if this.guard.is_tty {
-                    let elapsed = if this.with_elapsed_time {
-                        this.start.get_or_insert_with(Instant::now).elapsed()
-                    } else {
-                        Duration::ZERO
-                    };
-
-                    let completed = (this.fraction_fn)(this.current, &item);
-
-                    let ctx = RenderContext {
-                        spinner: this.spinner_char,
-                        elapsed,
-                        show_elapsed: this.with_elapsed_time,
-                        bar: &this.bar,
-                        bar_width: this.bar_width,
-                        progress: Some(completed),
-                        label: None,
-                        message: this.message.as_deref(),
-                        spinner_style: owo_colors::Style::new(),
-                        annotation_style: owo_colors::Style::new(),
-                    };
-
-                    this.render_buf.clear();
-                    this.layout.render(&ctx, &mut this.render_buf);
-
-                    let mut stdout = std::io::stdout().lock();
-                    let _ = clear_line(&mut stdout);
-                    let _ = stdout.write_all(term::HIDE_CURSOR);
-                    let _ = stdout.write_all(this.render_buf.as_bytes());
-                    let _ = stdout.flush();
-                }
-
+                let completed = (this.fraction_fn)(this.current, &item);
+                this.state.set_progress(completed);
+                this.state.render_now();
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                if this.guard.is_tty {
-                    let mut stdout = std::io::stdout().lock();
-                    let _ = clear_line(&mut stdout);
-                    let _ = stdout.write_all(term::SHOW_CURSOR);
-                    let _ = stdout.flush();
-                }
+                this.state.finish();
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
@@ -210,26 +150,12 @@ pub trait StreamExt: Stream {
         Self: Sized,
         F: FnMut(usize, &Self::Item) -> f64 + Unpin,
     {
-        let theme = theme.into();
-        let bar_width = theme.effective_bar_width();
-
         StreamProgressBuilder {
             inner: self,
-            bar: theme.bar,
-            bar_width,
-            ticks: theme.spinner.ticks(),
             fraction_fn,
             messages: stream::pending(),
             current: 0,
-            spinner_char: None,
-            message: None,
-            with_elapsed_time: false,
-            start: None,
-            render_buf: String::new(),
-            layout: theme.layout,
-            guard: CursorGuard {
-                is_tty: std::io::stdout().is_terminal(),
-            },
+            state: State::new(theme.into()),
         }
     }
 }

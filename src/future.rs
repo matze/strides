@@ -224,6 +224,20 @@ where
 }
 
 /// Extension trait that adds progress display to futures.
+///
+/// `progress` / `progressive` lift a bare future into a [`ProgressFuture`]. The setters
+/// ([`with_label`](FutureExt::with_label), [`with_messages`](FutureExt::with_messages),
+/// [`with_progress`](FutureExt::with_progress), [`with_elapsed_time`](FutureExt::with_elapsed_time))
+/// mirror the ones on [`ProgressFuture`] and lift implicitly, so a bare future can be configured
+/// and pushed into a [`Group`] without spelling out `.progressive()` first:
+///
+/// ```rust,no_run
+/// # use std::time::{Duration, Instant};
+/// # use strides::future::{FutureExt, Group};
+/// # use strides::spinner;
+/// # let mut group = Group::<Instant>::new(spinner::styles::DOTS_3);
+/// group.push(async_io::Timer::after(Duration::from_secs(1)).with_label("fast"));
+/// ```
 pub trait FutureExt: Future {
     /// Wrap this future in a standalone [`ProgressFuture`] driven by `theme`. Awaiting the result
     /// renders a spinner, optional bar and message to stdout until the future resolves.
@@ -241,6 +255,45 @@ pub trait FutureExt: Future {
         Self: Sized,
     {
         ProgressFuture::new(self)
+    }
+
+    /// Lift into a tracked-only [`ProgressFuture`] and attach a static label. Equivalent to
+    /// `self.progressive().with_label(label)`.
+    fn with_label<'a>(self, label: impl Display) -> ProgressFuture<'a, Self>
+    where
+        Self: Sized,
+    {
+        self.progressive().with_label(label)
+    }
+
+    /// Lift into a tracked-only [`ProgressFuture`] and prepend elapsed time. Equivalent to
+    /// `self.progressive().with_elapsed_time()`.
+    fn with_elapsed_time<'a>(self) -> ProgressFuture<'a, Self>
+    where
+        Self: Sized,
+    {
+        self.progressive().with_elapsed_time()
+    }
+
+    /// Lift into a tracked-only [`ProgressFuture`] and drive the displayed message from
+    /// `messages`. Equivalent to `self.progressive().with_messages(messages)`.
+    fn with_messages<'a, S>(self, messages: S) -> ProgressFuture<'a, Self, S>
+    where
+        Self: Sized,
+        S: Stream + Unpin,
+        S::Item: Display,
+    {
+        self.progressive().with_messages(messages)
+    }
+
+    /// Lift into a tracked-only [`ProgressFuture`] and drive the progress bar from `progress`.
+    /// Equivalent to `self.progressive().with_progress(progress)`.
+    fn with_progress<'a, S>(self, progress: S) -> ProgressFuture<'a, Self, Pending<&'static str>, S>
+    where
+        Self: Sized,
+        S: Stream<Item = f64> + Unpin,
+    {
+        self.progressive().with_progress(progress)
     }
 }
 

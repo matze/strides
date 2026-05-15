@@ -7,13 +7,22 @@
 A command-line UI library to enhance async programs with progress bars and
 spinners.
 
-The crate is built around two extension traits and one container:
+The crate is built around two extension traits and two containers:
 
-- [`FutureExt`] adds `.progress(...)` to any [`Future`].
-- [`StreamExt`] adds `.progress(...)` to any [`Stream`].
-- [`Group`] runs many futures concurrently, rendering one line per task.
-- The opt-in `io` and `tokio` features add `.progress(...)` to `AsyncRead` /
-  `AsyncWrite` for byte-counted file copies and downloads.
+- [`FutureExt`] adds `.progress(theme)` (standalone), `.progressive()`
+  (for Group), and the `.with_label(...)` / `.with_messages(...)` /
+  `.with_progress(...)` / `.with_elapsed_time()` setters that implicitly lift a
+  bare [`Future`] into a tracked-only `ProgressFuture` for Group.
+- [`StreamExt`] adds `.progress(theme, ...)` / `.progress_bytes(theme, ...)`
+  (standalone) and `.progressive()` / `.progressive_bytes()` (for Group) to
+  any [`Stream`].
+- [`future::Group`] runs many [`Future`]s concurrently, rendering one line
+  per task.
+- [`stream::Group`] runs many [`Stream`]s concurrently, rendering one line
+  per stream.
+- For byte-counted file copies and downloads, convert an `AsyncRead` to a
+  byte stream (e.g. via [`tokio_util::io::ReaderStream`]) and use
+  `.progress_bytes(...)`.
 
 Each `.progress(...)` call animates automatically and returns a builder for
 further customization. A [`Theme`] bundles a [`Spinner`], a [`Bar`] and a
@@ -26,7 +35,9 @@ variants.
 [`Stream`]: https://docs.rs/futures-lite/latest/futures_lite/stream/trait.Stream.html
 [`FutureExt`]: https://docs.rs/strides/latest/strides/future/trait.FutureExt.html
 [`StreamExt`]: https://docs.rs/strides/latest/strides/stream/trait.StreamExt.html
-[`Group`]: https://docs.rs/strides/latest/strides/future/struct.Group.html
+[`future::Group`]: https://docs.rs/strides/latest/strides/future/struct.Group.html
+[`stream::Group`]: https://docs.rs/strides/latest/strides/stream/struct.Group.html
+[`tokio_util::io::ReaderStream`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.ReaderStream.html
 [`Theme`]: https://docs.rs/strides/latest/strides/struct.Theme.html
 [`Spinner`]: https://docs.rs/strides/latest/strides/spinner/struct.Spinner.html
 [`Bar`]: https://docs.rs/strides/latest/strides/bar/struct.Bar.html

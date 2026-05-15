@@ -137,6 +137,14 @@
 //! # });
 //! ```
 //!
+//! For byte-oriented streams use
+//! [`progress_bytes()`](crate::stream::StreamExt::progress_bytes) instead. The closure returns
+//! the number of bytes each item carries and the builder owns the cumulative counter, the
+//! smoothed transfer rate and — when [`with_len`](crate::stream::StreamBytesProgressBuilder::with_len)
+//! is set — the derived progress fraction. Pair with [`Segment::bytes`],
+//! [`Segment::rate`](crate::layout::Segment::rate) and [`Segment::eta`](crate::layout::Segment::eta)
+//! in a custom layout to render the byte / throughput / ETA columns that downloads typically want.
+//!
 //! ## Output
 //!
 //! strides currently renders all progress output to `stdout`. When `stdout` is not a terminal (for

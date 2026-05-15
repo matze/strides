@@ -44,6 +44,12 @@ pub struct RenderContext<'a> {
     pub bar_width: usize,
     /// Current progress fraction, or `None` when no progress is tracked.
     pub progress: Option<f64>,
+    /// Cumulative bytes transferred. `0` until the first byte-tracking update.
+    pub bytes_done: u64,
+    /// Total bytes expected, if known. Used by [`Segment::Bytes`] and [`Segment::Eta`].
+    pub bytes_total: Option<u64>,
+    /// Smoothed transfer rate in bytes per second, if enough samples are available.
+    pub rate: Option<f64>,
     /// Static label text, if any.
     pub label: Option<&'a str>,
     /// Dynamic message text, if any.
@@ -86,6 +92,16 @@ pub enum Segment {
     },
     /// Dynamic message text, rendered unstyled.
     Message,
+    /// Cumulative bytes transferred, optionally with the known total: `1.23 MiB / 5.00 MiB` when
+    /// a total is set, `1.23 MiB` otherwise. Renders nothing while no bytes have been transferred
+    /// and no total is known.
+    Bytes,
+    /// Smoothed transfer rate, formatted as e.g. `1.23 MiB/s`. Renders nothing until enough
+    /// samples are available to derive a rate.
+    Rate,
+    /// Estimated time remaining, derived from `bytes_total`, `bytes_done` and `rate`. Renders
+    /// nothing if any of those is missing or the rate is effectively zero.
+    Eta,
     /// Fixed literal text, always rendered.
     Literal(Cow<'static, str>),
     /// Arbitrary user-supplied rendering. The function appends to the buffer; appending nothing
@@ -124,6 +140,21 @@ impl Segment {
     /// A message segment.
     pub const fn message() -> Self {
         Segment::Message
+    }
+
+    /// A segment showing cumulative bytes transferred, with the total when known.
+    pub const fn bytes() -> Self {
+        Segment::Bytes
+    }
+
+    /// A segment showing the smoothed transfer rate.
+    pub const fn rate() -> Self {
+        Segment::Rate
+    }
+
+    /// A segment showing the estimated time remaining.
+    pub const fn eta() -> Self {
+        Segment::Eta
     }
 
     /// A fixed literal-text segment.
@@ -280,9 +311,67 @@ impl Segment {
                     buf.push_str(message);
                 }
             }
+            Segment::Bytes => {
+                if ctx.bytes_done == 0 && ctx.bytes_total.is_none() {
+                    return;
+                }
+                format_bytes_iec(ctx.bytes_done, buf);
+                if let Some(total) = ctx.bytes_total {
+                    buf.push_str(" / ");
+                    format_bytes_iec(total, buf);
+                }
+            }
+            Segment::Rate => {
+                if let Some(rate) = ctx.rate {
+                    format_bytes_iec(rate.max(0.0) as u64, buf);
+                    buf.push_str("/s");
+                }
+            }
+            Segment::Eta => {
+                if let (Some(total), Some(rate)) = (ctx.bytes_total, ctx.rate) {
+                    if rate > 0.0 && total > ctx.bytes_done {
+                        let remaining = (total - ctx.bytes_done) as f64 / rate;
+                        format_eta_secs(remaining, buf);
+                    }
+                }
+            }
             Segment::Literal(text) => buf.push_str(text),
             Segment::Custom(f) => f(ctx, buf),
         }
+    }
+}
+
+const BYTE_UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+
+fn format_bytes_iec(n: u64, buf: &mut String) {
+    if n < 1024 {
+        let _ = write!(buf, "{n} B");
+        return;
+    }
+    let mut value = n as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < BYTE_UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    let _ = write!(buf, "{:.2} {}", value, BYTE_UNITS[unit]);
+}
+
+fn format_eta_secs(secs: f64, buf: &mut String) {
+    if !secs.is_finite() || secs < 0.0 {
+        return;
+    }
+    let total = secs as u64;
+    let hours = total / 3600;
+    let minutes = (total % 3600) / 60;
+    let seconds = total % 60;
+    buf.push_str("eta ");
+    if hours > 0 {
+        let _ = write!(buf, "{hours}h{minutes:02}m{seconds:02}s");
+    } else if minutes > 0 {
+        let _ = write!(buf, "{minutes}m{seconds:02}s");
+    } else {
+        let _ = write!(buf, "{seconds}s");
     }
 }
 
@@ -384,6 +473,9 @@ mod tests {
             bar: EMPTY_BAR,
             bar_width: 10,
             progress: None,
+            bytes_done: 0,
+            bytes_total: None,
+            rate: None,
             label: None,
             message: None,
             spinner_style: Style::new(),
@@ -436,5 +528,91 @@ mod tests {
         layout.render(&context(), &mut buf);
 
         assert_eq!(buf, "a | b");
+    }
+
+    fn render(segment: Segment, ctx: &RenderContext) -> String {
+        let mut buf = String::new();
+        Layout::new(&[]).with_segment(segment).render(ctx, &mut buf);
+        buf
+    }
+
+    #[test]
+    fn bytes_segment_skips_when_zero_and_no_total() {
+        assert_eq!(render(Segment::bytes(), &context()), "");
+    }
+
+    #[test]
+    fn bytes_segment_renders_done_only() {
+        let mut ctx = context();
+        ctx.bytes_done = 1500;
+        assert_eq!(render(Segment::bytes(), &ctx), "1.46 KiB");
+    }
+
+    #[test]
+    fn bytes_segment_renders_done_and_total() {
+        let mut ctx = context();
+        ctx.bytes_done = 1024 * 1024;
+        ctx.bytes_total = Some(5 * 1024 * 1024);
+        assert_eq!(render(Segment::bytes(), &ctx), "1.00 MiB / 5.00 MiB");
+    }
+
+    #[test]
+    fn bytes_segment_renders_zero_when_total_known() {
+        let mut ctx = context();
+        ctx.bytes_total = Some(2048);
+        assert_eq!(render(Segment::bytes(), &ctx), "0 B / 2.00 KiB");
+    }
+
+    #[test]
+    fn rate_segment_skips_without_sample() {
+        assert_eq!(render(Segment::rate(), &context()), "");
+    }
+
+    #[test]
+    fn rate_segment_renders_with_unit_suffix() {
+        let mut ctx = context();
+        ctx.rate = Some(800.0 * 1024.0);
+        assert_eq!(render(Segment::rate(), &ctx), "800.00 KiB/s");
+    }
+
+    #[test]
+    fn eta_segment_skips_without_total_or_rate() {
+        let mut ctx = context();
+        ctx.rate = Some(1024.0);
+        assert_eq!(render(Segment::eta(), &ctx), "");
+
+        ctx.rate = None;
+        ctx.bytes_total = Some(2048);
+        assert_eq!(render(Segment::eta(), &ctx), "");
+    }
+
+    #[test]
+    fn eta_segment_seconds() {
+        let mut ctx = context();
+        ctx.bytes_done = 0;
+        ctx.bytes_total = Some(1024 * 50);
+        ctx.rate = Some(1024.0 * 10.0);
+        assert_eq!(render(Segment::eta(), &ctx), "eta 5s");
+    }
+
+    #[test]
+    fn eta_segment_minutes_and_hours() {
+        let mut ctx = context();
+        ctx.bytes_done = 0;
+        ctx.bytes_total = Some(125);
+        ctx.rate = Some(1.0);
+        assert_eq!(render(Segment::eta(), &ctx), "eta 2m05s");
+
+        ctx.bytes_total = Some(3725);
+        assert_eq!(render(Segment::eta(), &ctx), "eta 1h02m05s");
+    }
+
+    #[test]
+    fn eta_segment_skips_when_complete() {
+        let mut ctx = context();
+        ctx.bytes_done = 4096;
+        ctx.bytes_total = Some(4096);
+        ctx.rate = Some(1024.0);
+        assert_eq!(render(Segment::eta(), &ctx), "");
     }
 }

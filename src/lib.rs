@@ -145,6 +145,17 @@
 //! [`Segment::rate`](crate::layout::Segment::rate) and [`Segment::eta`](crate::layout::Segment::eta)
 //! in a custom layout to render the byte / throughput / ETA columns that downloads typically want.
 //!
+//! ## I/O wrappers
+//!
+//! Two opt-in Cargo features add direct progress wrappers for the async I/O traits:
+//!
+//! - **`io`** enables [`io::AsyncReadProgressExt`](crate::io::AsyncReadProgressExt) and
+//!   [`AsyncWriteProgressExt`](crate::io::AsyncWriteProgressExt) for the futures-io traits. The
+//!   traits themselves are re-exports from `futures-lite`.
+//! - **`tokio`** enables [`io::tokio::AsyncReadProgressExt`](crate::io::tokio::AsyncReadProgressExt)
+//!   and [`AsyncWriteProgressExt`](crate::io::tokio::AsyncWriteProgressExt) for the tokio traits,
+//!   and pulls tokio in as a runtime dependency.
+//!
 //! ## Output
 //!
 //! strides currently renders all progress output to `stdout`. When `stdout` is not a terminal (for
@@ -165,6 +176,9 @@ pub mod spinner;
 pub mod stream;
 pub mod term;
 pub mod theme;
+
+#[cfg(any(feature = "io", feature = "tokio"))]
+pub mod io;
 
 pub(crate) mod state;
 

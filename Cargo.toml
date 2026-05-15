@@ -11,12 +11,18 @@ repository = "https://github.com/matze/strides"
 [workspace]
 resolver = "3"
 
+[features]
+default = []
+io = []
+tokio = ["dep:tokio"]
+
 [dependencies]
 futures-timer = "3.0.0"
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 futures-lite = "2.0"
 owo-colors = "4.0.0"
 terminal_size = "0.2"
+tokio = { version = "1.47.0", default-features = false, features = ["fs"], optional = true }
 
 [dev-dependencies]
 async-io = "2.3.0"
@@ -28,3 +34,7 @@ futures-concurrency = "7.4.0"
 reqwest = { version = "0.11.0", default-features = false, features = ["rustls", "stream"] }
 tokio = { version = "1.47.0", features = ["full"] }
 tokio-util = { version = "0.7.17", features = ["codec", "io"] }
+
+[[example]]
+name = "iocopy"
+required-features = ["tokio"]

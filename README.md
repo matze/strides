@@ -12,6 +12,8 @@ The crate is built around two extension traits and one container:
 - [`FutureExt`] adds `.progress(...)` to any [`Future`].
 - [`StreamExt`] adds `.progress(...)` to any [`Stream`].
 - [`Group`] runs many futures concurrently, rendering one line per task.
+- The opt-in `io` and `tokio` features add `.progress(...)` to `AsyncRead` /
+  `AsyncWrite` for byte-counted file copies and downloads.
 
 Each `.progress(...)` call animates automatically and returns a builder for
 further customization. A [`Theme`] bundles a [`Spinner`], a [`Bar`] and a

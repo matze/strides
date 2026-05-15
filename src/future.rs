@@ -19,14 +19,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use crossterm::{cursor, QueueableCommand};
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 
 use crate::bar::Bar;
 use crate::layout::{Layout, RenderContext};
 use crate::spinner::Ticks;
-use crate::term::{clear_line, CursorGuard};
+use crate::term::{self, clear_line, CursorGuard};
 use crate::Theme;
 
 /// Builder returned by [`FutureExt::progress`].
@@ -190,14 +189,14 @@ where
 
                     let mut stdout = std::io::stdout().lock();
                     let _ = clear_line(&mut stdout);
-                    let _ = stdout.queue(cursor::Hide);
+                    let _ = stdout.write_all(term::HIDE_CURSOR);
                     let _ = stdout.write_all(this.render_buf.as_bytes());
                     let _ = stdout.flush();
                 }
                 Poll::Ready(_) => {
                     let mut stdout = std::io::stdout().lock();
                     let _ = clear_line(&mut stdout);
-                    let _ = stdout.queue(cursor::Show);
+                    let _ = stdout.write_all(term::SHOW_CURSOR);
                     let _ = stdout.flush();
                 }
                 _ => {}

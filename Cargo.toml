@@ -8,9 +8,11 @@ license = "MIT"
 documentation = "https://docs.rs/strides"
 repository = "https://github.com/matze/strides"
 
+[workspace]
+resolver = "3"
+
 [dependencies]
 futures-timer = "3.0.0"
-crossterm = { version = "0.25", default-features = false }
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 futures-lite = "2.0"
 owo-colors = "4.0.0"

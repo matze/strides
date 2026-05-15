@@ -5,14 +5,13 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 use std::{io::Write, pin::Pin};
 
-use crossterm::{cursor, QueueableCommand};
 use futures_lite::{FutureExt as _, Stream, StreamExt as _};
 use futures_util::stream::FuturesUnordered;
 
 use crate::bar::Bar;
 use crate::layout::{Layout, RenderContext};
 use crate::spinner::Ticks;
-use crate::term::{clear_line, reset};
+use crate::term::{self, clear_line, reset};
 use crate::Theme;
 
 /// Helper future that allows us to track the completion status of the wrapped future F.
@@ -311,7 +310,7 @@ where
             this.dirty = false;
 
             let mut stdout = std::io::stdout().lock();
-            let _ = stdout.queue(cursor::Hide);
+            let _ = stdout.write_all(term::HIDE_CURSOR);
 
             let active_count = this.tasks.iter().filter(|t| t.is_some()).count();
 
@@ -351,7 +350,7 @@ where
             let total_advanced = active_count + stale_lines;
 
             if total_advanced > 0 {
-                let _ = stdout.queue(cursor::MoveUp(total_advanced as u16));
+                let _ = term::move_up(&mut stdout, total_advanced as u16);
             }
 
             let _ = stdout.flush();

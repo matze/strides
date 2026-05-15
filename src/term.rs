@@ -1,20 +1,32 @@
 //! Terminal helpers.
 //!
 //! [`reset()`] returns the terminal to a clean state after progress rendering. Call it from a
-//! `Ctrl-C` handler when using [`Group`](crate::future::Group) so the hidden cursor is restored
-//! and any leftover lines are cleared. See `examples/concurrent_futures.rs` for a complete
+//! `Ctrl-C` handler when using [`Group`](crate::future::Group) so the hidden cursor is restored and
+//! any leftover lines are cleared. See `examples/concurrent_futures.rs` for a complete
 //! signal-handling setup.
+//!
+//! Rendering emits VT100/ANSI escape sequences directly to stdout. On Windows that means using
+//! Windows Terminal or PowerShell rather than legacy `cmd.exe`.
 
 use std::io::{IsTerminal, Write};
 
-use crossterm::{cursor, terminal, QueueableCommand};
+pub(crate) const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
+pub(crate) const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
+
+const CLEAR_CURRENT_LINE: &[u8] = b"\x1b[2K";
+const MOVE_TO_COLUMN_0: &[u8] = b"\x1b[1G";
+const CLEAR_FROM_CURSOR_DOWN: &[u8] = b"\x1b[J";
 
 /// Clear the current line and move the cursor to the first column.
 pub(crate) fn clear_line<W: Write>(w: &mut W) -> std::io::Result<()> {
-    w.queue(terminal::Clear(terminal::ClearType::CurrentLine))?
-        .queue(cursor::MoveToColumn(0))?;
-
+    w.write_all(CLEAR_CURRENT_LINE)?;
+    w.write_all(MOVE_TO_COLUMN_0)?;
     Ok(())
+}
+
+/// Move the cursor up `n` lines.
+pub(crate) fn move_up<W: Write>(w: &mut W, n: u16) -> std::io::Result<()> {
+    write!(w, "\x1b[{n}A")
 }
 
 /// Restores the terminal cursor when dropped, including early drops where the progress builder is
@@ -28,7 +40,7 @@ impl Drop for CursorGuard {
         if self.is_tty {
             let mut stdout = std::io::stdout().lock();
             let _ = clear_line(&mut stdout);
-            let _ = stdout.queue(cursor::Show);
+            let _ = stdout.write_all(SHOW_CURSOR);
             let _ = stdout.flush();
         }
     }
@@ -44,13 +56,14 @@ impl Drop for CursorGuard {
 /// a no-op, so signal handlers can call it unconditionally.
 pub fn reset() -> std::io::Result<()> {
     let mut stdout = std::io::stdout().lock();
+
     if !stdout.is_terminal() {
         return Ok(());
     }
-    stdout
-        .queue(cursor::Show)?
-        .queue(cursor::MoveToColumn(0))?
-        .queue(terminal::Clear(terminal::ClearType::FromCursorDown))?;
+
+    stdout.write_all(SHOW_CURSOR)?;
+    stdout.write_all(MOVE_TO_COLUMN_0)?;
+    stdout.write_all(CLEAR_FROM_CURSOR_DOWN)?;
     stdout.flush()?;
     Ok(())
 }

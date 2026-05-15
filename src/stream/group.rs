@@ -1,5 +1,6 @@
-//! Multi-line progress display for concurrent futures.
+//! Multi-line progress display for concurrent streams.
 
+use std::collections::VecDeque;
 use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -9,48 +10,26 @@ use futures_lite::Stream;
 use owo_colors::Style;
 
 use crate::line::{FrameContext, Line};
-use crate::progressive::ProgressiveFuture;
+use crate::progressive::ProgressiveStream;
 use crate::spinner::Ticks;
 use crate::term::{self, clear_line, CursorGuard};
 use crate::Theme;
 
-/// One slot in a [`Group`]: the wrapped future and its render line.
-struct Slot<'a, O> {
-    work: Pin<Box<dyn ProgressiveFuture<Output = O> + 'a>>,
+/// One slot in a [`Group`]: the wrapped stream and its render line.
+struct Slot<'a, I> {
+    work: Pin<Box<dyn ProgressiveStream<Item = I> + 'a>>,
     line: Line<'a>,
 }
 
-/// A group of [`ProgressiveFuture`]s rendered as one line per task.
+/// A group of [`ProgressiveStream`]s rendered as one line per stream.
 ///
-/// `Group` owns its work and polls every active slot on each `poll_next`. After polling, it reads
-/// each slot's progress via the [`Progressive`](crate::progressive::Progressive) trait and repaints
-/// the corresponding line. When a future resolves the line is removed and the output is yielded
-/// from the [`Stream`] impl.
-///
-/// Push futures with [`push`](Group::push). The setters mirrored on
-/// [`FutureExt`](crate::future::FutureExt) ([`with_label`](crate::future::FutureExt::with_label),
-/// [`with_messages`](crate::future::FutureExt::with_messages),
-/// [`with_progress`](crate::future::FutureExt::with_progress),
-/// [`with_elapsed_time`](crate::future::FutureExt::with_elapsed_time)) lift a bare future into a
-/// tracked-only [`ProgressFuture`](crate::future::ProgressFuture); use
-/// [`progressive()`](crate::future::FutureExt::progressive) to lift explicitly when pushing a
-/// future with no configuration.
-///
-/// ```rust,no_run
-/// use std::time::Duration;
-/// use futures_lite::{StreamExt, future};
-/// use strides::future::{FutureExt, Group};
-/// use strides::spinner;
-///
-/// future::block_on(async {
-///     let mut group = Group::new(spinner::styles::DOTS_3);
-///     group.push(async_io::Timer::after(Duration::from_secs(1)).with_label("fast"));
-///     group.push(async_io::Timer::after(Duration::from_secs(3)).with_label("slow"));
-///     group.for_each(|_| {}).await;
-/// });
-/// ```
-pub struct Group<'a, O> {
-    slots: Vec<Option<Slot<'a, O>>>,
+/// Each [`poll_next`](Stream::poll_next) call polls every active slot once. Items yielded by the
+/// inner streams are queued and drained one-per-call from the [`Stream`] impl. When an inner
+/// stream returns `Ready(None)` its line is removed. The Group itself returns `Ready(None)` once
+/// every slot has terminated.
+pub struct Group<'a, I> {
+    slots: Vec<Option<Slot<'a, I>>>,
+    buffer: VecDeque<I>,
     theme: Theme<'a>,
     ticks: Ticks<'a>,
     spinner_char: Option<char>,
@@ -64,7 +43,7 @@ pub struct Group<'a, O> {
     _guard: CursorGuard,
 }
 
-impl<'a, O> Group<'a, O> {
+impl<'a, I> Group<'a, I> {
     /// Create a new group using `theme` to style every line.
     pub fn new(theme: impl Into<Theme<'a>>) -> Self {
         let theme = theme.into();
@@ -72,6 +51,7 @@ impl<'a, O> Group<'a, O> {
         let ticks = theme.spinner.ticks();
         Self {
             slots: Vec::new(),
+            buffer: VecDeque::new(),
             theme,
             ticks,
             spinner_char: None,
@@ -104,29 +84,28 @@ impl<'a, O> Group<'a, O> {
         self
     }
 
-    /// Add a future to the group. The future must implement [`ProgressiveFuture`]; calling any of
-    /// the [`FutureExt`](crate::future::FutureExt) setters
-    /// ([`with_label`](crate::future::FutureExt::with_label),
-    /// [`with_messages`](crate::future::FutureExt::with_messages),
-    /// [`with_progress`](crate::future::FutureExt::with_progress),
-    /// [`with_elapsed_time`](crate::future::FutureExt::with_elapsed_time)) on a bare future
-    /// produces one. For a bare future with no configuration, call
-    /// [`progressive()`](crate::future::FutureExt::progressive) to lift it explicitly.
-    pub fn push<F>(&mut self, fut: F)
+    /// Add a stream to the group. The stream must implement [`ProgressiveStream`]; use
+    /// [`progressive`](crate::stream::StreamExt::progressive) or
+    /// [`progressive_bytes`](crate::stream::StreamExt::progressive_bytes) on a bare stream to
+    /// obtain one.
+    pub fn push<S>(&mut self, stream: S)
     where
-        F: ProgressiveFuture<Output = O> + 'a,
+        S: ProgressiveStream<Item = I> + 'a,
     {
         let line = Line::new(&self.theme);
         self.slots.push(Some(Slot {
-            work: Box::pin(fut),
+            work: Box::pin(stream),
             line,
         }));
         self.dirty = true;
     }
 }
 
-impl<O> Stream for Group<'_, O> {
-    type Item = O;
+impl<I> Stream for Group<'_, I>
+where
+    I: Unpin,
+{
+    type Item = I;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -142,17 +121,17 @@ impl<O> Stream for Group<'_, O> {
             this.dirty = true;
         }
 
-        // Poll every active slot; record the first completion to yield.
-        let mut completed: Option<O> = None;
+        // Poll each active slot once, collecting any newly-yielded items into the buffer.
         for slot in this.slots.iter_mut() {
             if let Some(s) = slot {
-                match s.work.as_mut().poll(cx) {
-                    Poll::Ready(out) => {
-                        if completed.is_none() {
-                            completed = Some(out);
-                            *slot = None;
-                            this.dirty = true;
-                        }
+                match s.work.as_mut().poll_next(cx) {
+                    Poll::Ready(Some(item)) => {
+                        this.buffer.push_back(item);
+                        this.dirty = true;
+                    }
+                    Poll::Ready(None) => {
+                        *slot = None;
+                        this.dirty = true;
                     }
                     Poll::Pending => {}
                 }
@@ -183,7 +162,6 @@ impl<O> Stream for Group<'_, O> {
                 let _ = stdout.write_all(b"\n");
             }
 
-            // Clear any leftover lines from a previous frame whose slots have since completed.
             let stale = this.rendered_lines.saturating_sub(active_count);
             for _ in 0..stale {
                 let _ = clear_line(&mut stdout);
@@ -199,12 +177,11 @@ impl<O> Stream for Group<'_, O> {
             this.rendered_lines = active_count;
         }
 
-        if let Some(out) = completed {
-            return Poll::Ready(Some(out));
+        if let Some(item) = this.buffer.pop_front() {
+            return Poll::Ready(Some(item));
         }
 
         if active_count == 0 {
-            // All slots done and emitted; one final return.
             let _ = term::reset();
             return Poll::Ready(None);
         }

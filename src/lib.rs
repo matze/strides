@@ -80,15 +80,13 @@
 //! ## Futures
 //!
 //! Import the [`FutureExt`](crate::future::FutureExt) extension trait and call
-//! [`progress()`](crate::future::FutureExt::progress) with a [`Theme`] on any [`Future`] to animate
-//! its state, which is either in-progress or done. The return value double acts as a
-//! [`ProgressBuilder`](crate::future::ProgressBuilder) for further customization of the animation:
-//!
-//! - [`with_label`](crate::future::ProgressBuilder::with_label) sets a static label,
-//! - [`with_messages`](crate::future::ProgressBuilder::with_messages) installs a
-//!   [`Stream`](futures_lite::Stream) whose values replace the displayed message as they arrive,
-//! - [`with_progress`](crate::future::ProgressBuilder::with_progress) drives the progress bar from a
-//!   `Stream<Item = f64>`.
+//! [`progress(theme)`](crate::future::FutureExt::progress) on any [`Future`] for standalone use,
+//! or [`progressive()`](crate::future::FutureExt::progressive) to lift it for inclusion in a
+//! [`future::Group`]. Both return a [`ProgressFuture`](crate::future::ProgressFuture) configured fluently
+//! with [`with_label`](crate::future::ProgressFuture::with_label),
+//! [`with_messages`](crate::future::ProgressFuture::with_messages) (a `Stream` whose values
+//! replace the message), and [`with_progress`](crate::future::ProgressFuture::with_progress) (a
+//! `Stream<Item = f64>` driving the bar).
 //!
 //! ```rust
 //! use strides::future::FutureExt;
@@ -105,18 +103,24 @@
 //! # );
 //! ```
 //!
-//! For multiple concurrent futures use [`Group`], which renders one line per task
-//! with optional per-task progress bars and dynamic messages.
+//! For multiple concurrent futures, push the future directly into a [`future::Group`]. The
+//! [`with_label`](crate::future::FutureExt::with_label),
+//! [`with_messages`](crate::future::FutureExt::with_messages),
+//! [`with_progress`](crate::future::FutureExt::with_progress) and
+//! [`with_elapsed_time`](crate::future::FutureExt::with_elapsed_time) setters on
+//! [`FutureExt`](crate::future::FutureExt) lift the future into a tracked-only
+//! [`ProgressFuture`](crate::future::ProgressFuture) implicitly. Use `.progressive()` explicitly
+//! when pushing a bare future with no configuration. See [`future::Group`]'s docs for an example.
 //!
 //! ## Streams
 //!
-//! Import the [`StreamExt`](crate::stream::StreamExt) extension trait and call
-//! [`progress()`](crate::stream::StreamExt::progress) with a fraction closure. The closure receives
-//! the monotonically increasing item number (starting at 1) and a reference to the item, so the
-//! fraction can be derived from a known total or from the item itself (e.g. accumulated bytes /
-//! `Content-Length`). The returned [`StreamProgressBuilder`](crate::stream::StreamProgressBuilder)
-//! accepts a [`with_messages`](crate::stream::StreamProgressBuilder::with_messages) stream for
-//! dynamic text.
+//! Import the [`StreamExt`](crate::stream::StreamExt) extension trait. Standalone:
+//! [`progress(theme, fraction_fn)`](crate::stream::StreamExt::progress) when each item carries
+//! enough information to compute completion, or
+//! [`progress_bytes(theme, bytes_fn)`](crate::stream::StreamExt::progress_bytes) for byte-oriented
+//! streams (the wrapper accumulates a counter, derives a smoothed rate, and — when
+//! [`with_len`](crate::stream::ProgressBytesStream::with_len) is set — derives the progress
+//! fraction).
 //!
 //! ```rust
 //! use futures_lite::{StreamExt as _, stream};
@@ -137,24 +141,36 @@
 //! # });
 //! ```
 //!
-//! For byte-oriented streams use
-//! [`progress_bytes()`](crate::stream::StreamExt::progress_bytes) instead. The closure returns
-//! the number of bytes each item carries and the builder owns the cumulative counter, the
-//! smoothed transfer rate and — when [`with_len`](crate::stream::StreamBytesProgressBuilder::with_len)
-//! is set — the derived progress fraction. Pair with [`Segment::bytes`],
+//! For multiple concurrent streams use
+//! [`progressive`](crate::stream::StreamExt::progressive) or
+//! [`progressive_bytes`](crate::stream::StreamExt::progressive_bytes) and push the result into a
+//! [`stream::Group`]. Pair with [`Segment::bytes`],
 //! [`Segment::rate`](crate::layout::Segment::rate) and [`Segment::eta`](crate::layout::Segment::eta)
-//! in a custom layout to render the byte / throughput / ETA columns that downloads typically want.
+//! in a custom [`Layout`] to render the byte / throughput / ETA columns that downloads typically
+//! want.
 //!
-//! ## I/O wrappers
+//! ## Reading from `AsyncRead`
 //!
-//! Two opt-in Cargo features add direct progress wrappers for the async I/O traits:
+//! strides does not wrap [`AsyncRead`](futures_lite::AsyncRead) directly. Convert your reader to a
+//! byte stream first — for tokio,
+//! [`tokio_util::io::ReaderStream`](https://docs.rs/tokio-util/latest/tokio_util/io/struct.ReaderStream.html)
+//! is the canonical adapter — and feed it into
+//! [`progress_bytes`](crate::stream::StreamExt::progress_bytes):
 //!
-//! - **`io`** enables [`io::AsyncReadProgressExt`](crate::io::AsyncReadProgressExt) and
-//!   [`AsyncWriteProgressExt`](crate::io::AsyncWriteProgressExt) for the futures-io traits. The
-//!   traits themselves are re-exports from `futures-lite`.
-//! - **`tokio`** enables [`io::tokio::AsyncReadProgressExt`](crate::io::tokio::AsyncReadProgressExt)
-//!   and [`AsyncWriteProgressExt`](crate::io::tokio::AsyncWriteProgressExt) for the tokio traits,
-//!   and pulls tokio in as a runtime dependency.
+//! ```rust,ignore
+//! use tokio_util::io::ReaderStream;
+//! use futures_lite::StreamExt as _;
+//! use strides::stream::StreamExt as _;
+//!
+//! let mut stream = ReaderStream::new(reader)
+//!     .progress_bytes(theme, |c| c.as_ref().map_or(0, |c| c.len() as u64))
+//!     .with_label("download")
+//!     .with_len(total);
+//!
+//! while let Some(chunk) = stream.next().await {
+//!     writer.write_all(&chunk?).await?;
+//! }
+//! ```
 //!
 //! ## Output
 //!
@@ -165,22 +181,23 @@
 //!
 //! [`Future`]: std::future::Future
 //! [`Stream`]: futures_lite::Stream
-//! [`Group`]: crate::future::Group
+//! [`future::Group`]: crate::future::Group
+//! [`stream::Group`]: crate::stream::Group
 //! [`Spinner`]: crate::spinner::Spinner
 //! [`Bar`]: crate::bar::Bar
 
 pub mod bar;
 pub mod future;
 pub mod layout;
+pub mod progressive;
 pub mod spinner;
 pub mod stream;
 pub mod term;
 pub mod theme;
 
-#[cfg(any(feature = "io", feature = "tokio"))]
-pub mod io;
-
+pub(crate) mod line;
 pub(crate) mod state;
 
 pub use layout::{Layout, RenderContext, Segment};
+pub use progressive::{Progressive, ProgressiveFuture, ProgressiveStream};
 pub use theme::Theme;

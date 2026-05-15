@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- Introduce the `Progressive` trait (with `ProgressiveFuture` and
+  `ProgressiveStream` supertraits) as the rendering contract. Anything pushed
+  into a `Group` implements it; user-defined work can implement it directly.
+- Rename adapter types:
+  - `future::ProgressBuilder` → `future::ProgressFuture`
+  - `stream::StreamProgressBuilder` → `stream::ProgressStream`
+  - `stream::StreamBytesProgressBuilder` → `stream::ProgressBytesStream`
+- `future::Group<'a, F>` becomes `future::Group<'a, O>` parameterised on the
+  output type instead of the future type. Heterogeneous push is the default
+  (boxed `dyn ProgressiveFuture<Output = O>`).
+- `future::Task` is removed. Push futures directly; the
+  [`FutureExt`](crate::future::FutureExt) setters
+  (`with_label`/`with_messages`/`with_progress`/`with_elapsed_time`) implicitly
+  lift a bare future into a tracked-only `ProgressFuture`, so
+  `group.push(fut.with_label("x"))` works without spelling out `.progressive()`.
+  Use `.progressive()` explicitly when pushing a bare future with no
+  configuration.
+- Add `stream::Group<'a, I>` for rendering multiple concurrent streams as one
+  line per stream, with `StreamExt::progressive` and `progressive_bytes` as
+  constructors for the tracked form.
+
 
 ## 1.0.0-rc.1
 

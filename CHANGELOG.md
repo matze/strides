@@ -25,6 +25,15 @@
   line per stream, with `StreamExt::progressive` and `progressive_bytes` as
   constructors for the tracked form.
 
+### Fixed
+
+- `future::Group` no longer panics with "async fn resumed after completion"
+  when several pushed futures become `Ready` in the same `poll_next` call. The
+  previous loop captured only the first completion and left other completed
+  slots populated, so the next poll re-polled an already-finished future.
+  Outputs are now buffered (matching `stream::Group`) and drained one per
+  `poll_next`. As a result `Stream for future::Group<'_, O>` now requires
+  `O: Unpin` (consistent with `stream::Group`).
 
 ## 1.0.0-rc.1
 

@@ -1,5 +1,6 @@
 //! Multi-line progress display for concurrent futures.
 
+use std::collections::VecDeque;
 use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -51,6 +52,7 @@ struct Slot<'a, O> {
 /// ```
 pub struct Group<'a, O> {
     slots: Vec<Option<Slot<'a, O>>>,
+    buffer: VecDeque<O>,
     theme: Theme<'a>,
     ticks: Ticks<'a>,
     spinner_char: Option<char>,
@@ -72,6 +74,7 @@ impl<'a, O> Group<'a, O> {
         let ticks = theme.spinner.ticks();
         Self {
             slots: Vec::new(),
+            buffer: VecDeque::new(),
             theme,
             ticks,
             spinner_char: None,
@@ -125,7 +128,10 @@ impl<'a, O> Group<'a, O> {
     }
 }
 
-impl<O> Stream for Group<'_, O> {
+impl<O> Stream for Group<'_, O>
+where
+    O: Unpin,
+{
     type Item = O;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -142,19 +148,13 @@ impl<O> Stream for Group<'_, O> {
             this.dirty = true;
         }
 
-        // Poll every active slot; record the first completion to yield.
-        let mut completed: Option<O> = None;
+        // Poll every active slot; buffer every completion so simultaneous Readys aren't lost.
         for slot in this.slots.iter_mut() {
             if let Some(s) = slot {
-                match s.work.as_mut().poll(cx) {
-                    Poll::Ready(out) => {
-                        if completed.is_none() {
-                            completed = Some(out);
-                            *slot = None;
-                            this.dirty = true;
-                        }
-                    }
-                    Poll::Pending => {}
+                if let Poll::Ready(out) = s.work.as_mut().poll(cx) {
+                    this.buffer.push_back(out);
+                    *slot = None;
+                    this.dirty = true;
                 }
             }
         }
@@ -199,7 +199,7 @@ impl<O> Stream for Group<'_, O> {
             this.rendered_lines = active_count;
         }
 
-        if let Some(out) = completed {
+        if let Some(out) = this.buffer.pop_front() {
             return Poll::Ready(Some(out));
         }
 

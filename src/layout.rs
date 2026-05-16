@@ -157,9 +157,11 @@ impl Segment {
         Segment::Eta
     }
 
-    /// A fixed literal-text segment.
-    pub fn literal(text: impl Into<Cow<'static, str>>) -> Self {
-        Segment::Literal(text.into())
+    /// A fixed literal-text segment. Accepts a `&'static str` so the constructor is `const`;
+    /// callers that need an owned string can build [`Segment::Literal`] directly with
+    /// `Cow::Owned`.
+    pub const fn literal(text: &'static str) -> Self {
+        Segment::Literal(Cow::Borrowed(text))
     }
 
     /// A custom segment driven by `f`.

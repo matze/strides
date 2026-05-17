@@ -12,8 +12,10 @@
 //!   [`with_progress`](ProgressFuture::with_progress) before pushing.
 
 pub mod group;
+pub mod join;
 
 pub use group::Group;
+pub use join::{join, Join};
 
 use std::fmt::Display;
 use std::future::Future;
@@ -34,14 +36,14 @@ use crate::term::CursorGuard;
 use crate::Theme;
 
 /// Standalone-only fields: own line, spinner ticks, cursor guard.
-struct Rendering<'a> {
-    line: Line<'a>,
-    ticks: Ticks<'a>,
-    spinner_char: Option<char>,
-    spinner_style: Style,
-    annotation_style: Style,
-    is_tty: bool,
-    _guard: CursorGuard,
+pub(super) struct Rendering<'a> {
+    pub(super) line: Line<'a>,
+    pub(super) ticks: Ticks<'a>,
+    pub(super) spinner_char: Option<char>,
+    pub(super) spinner_style: Style,
+    pub(super) annotation_style: Style,
+    pub(super) is_tty: bool,
+    pub(super) _guard: CursorGuard,
 }
 
 /// A [`Future`] wrapped with progress state.

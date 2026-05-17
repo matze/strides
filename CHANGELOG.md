@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+## 1.0.0-rc.2
+
 ### Breaking changes
 
 - Introduce the `Progressive` trait (with `ProgressiveFuture` and
@@ -34,6 +37,7 @@
   Outputs are now buffered (matching `stream::Group`) and drained one per
   `poll_next`. As a result `Stream for future::Group<'_, O>` now requires
   `O: Unpin` (consistent with `stream::Group`).
+
 
 ## 1.0.0-rc.1
 

@@ -108,9 +108,14 @@
 //! [`with_messages`](crate::future::FutureExt::with_messages),
 //! [`with_progress`](crate::future::FutureExt::with_progress) and
 //! [`with_elapsed_time`](crate::future::FutureExt::with_elapsed_time) setters on
-//! [`FutureExt`](crate::future::FutureExt) lift the future into a tracked-only
+//! [`FutureExt`](crate::future::FutureExt) lift the future into a
 //! [`ProgressFuture`](crate::future::ProgressFuture) implicitly. Use `.progressive()` explicitly
-//! when pushing a bare future with no configuration. See [`future::Group`]'s docs for an example.
+//! when pushing a bare future with no configuration. Per-row overrides
+//! ([`with_theme`](crate::future::ProgressFuture::with_theme),
+//! [`with_spinner_style`](crate::future::ProgressFuture::with_spinner_style),
+//! [`with_annotation_style`](crate::future::ProgressFuture::with_annotation_style)) take
+//! precedence over the Group's defaults for that row. See [`future::Group`]'s docs for an
+//! example.
 //!
 //! ## Streams
 //!

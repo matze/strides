@@ -87,6 +87,11 @@ impl Stream for Ticks<'_> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<char>> {
         let this = self.get_mut();
 
+        // Inactive spinner: never yield a character.
+        if this.all_chars.is_empty() {
+            return Poll::Pending;
+        }
+
         // Wait for the current delay to expire.
         match Pin::new(&mut this.delay).poll(cx) {
             Poll::Ready(()) => {
@@ -143,10 +148,18 @@ impl<'a> Spinner<'a> {
 
     /// Return a stream of characters at the set interval.
     pub fn ticks(&self) -> Ticks<'a> {
+        // An inactive spinner stores `Duration::MAX` as a sentinel. Construct the underlying
+        // [`Delay`] with a finite but practically unreachable interval so `Instant + interval`
+        // doesn't overflow; `poll_next` short-circuits to `Pending` regardless.
+        let delay_interval = if self.chars.is_empty() {
+            Duration::from_secs(60 * 60 * 24 * 365)
+        } else {
+            self.interval
+        };
         Ticks {
             all_chars: self.chars,
             chars: self.chars.chars(),
-            delay: Delay::new(self.interval),
+            delay: Delay::new(delay_interval),
             interval: self.interval,
         }
     }

@@ -3,7 +3,8 @@
 //! Three entry points on [`StreamExt`]:
 //!
 //! - [`progress`](StreamExt::progress) takes a fraction closure; appropriate when each item
-//!   already carries enough information to compute completion in `0.0..=1.0`.
+//!   already carries enough information to compute completion in `0.0..=1.0`. Sugar for
+//!   `self.progressive(fraction_fn).with_theme(theme)`.
 //! - [`progress_bytes`](StreamExt::progress_bytes) takes a byte-delta closure. The builder owns
 //!   the cumulative counter, EWMA rate and (when
 //!   [`with_len`](ProgressBytesStream::with_len) is set) the derived progress fraction. Pair with
@@ -11,7 +12,9 @@
 //!   [`Segment::rate`](crate::layout::Segment::rate) and [`Segment::eta`](crate::layout::Segment::eta)
 //!   in a custom [`Layout`](crate::layout::Layout) for byte / throughput / ETA columns.
 //! - [`progressive`](StreamExt::progressive) and [`progressive_bytes`](StreamExt::progressive_bytes)
-//!   produce tracked-only adapters for inclusion in a [`Group`] — they don't render on their own.
+//!   produce unconfigured adapters. Without [`with_theme`](ProgressStream::with_theme) they
+//!   inherit the parent [`Group`]'s theme; with `with_theme` they render standalone or override
+//!   the Group's theme per-row.
 //!
 //! Dynamic messages compose on top of any builder via
 //! [`with_messages`](ProgressStream::with_messages).
@@ -37,7 +40,7 @@ use crate::state::State;
 use crate::term::CursorGuard;
 use crate::Theme;
 
-/// Standalone rendering state for stream wrappers.
+/// Materialised rendering bits used by the standalone path.
 struct Rendering<'a> {
     line: Line<'a>,
     ticks: Ticks<'a>,
@@ -48,6 +51,17 @@ struct Rendering<'a> {
     _guard: CursorGuard,
 }
 
+/// Lifecycle of the standalone rendering bits.
+enum RenderingState<'a> {
+    /// Constructed but not yet polled. Materialise on first poll using the row's theme override
+    /// (or [`Theme::default()`] when none was set).
+    Pending,
+    /// Materialised; standalone rendering is active.
+    Active(Rendering<'a>),
+    /// A [`Group`] owns rendering for this row; no standalone rendering will happen.
+    Detached,
+}
+
 /// A [`Stream`] wrapped to track progress derived from a fraction closure.
 pub struct ProgressStream<'a, S, F, M = Pending<&'static str>> {
     inner: S,
@@ -55,10 +69,13 @@ pub struct ProgressStream<'a, S, F, M = Pending<&'static str>> {
     messages: M,
     state: State,
     current: usize,
-    rendering: Option<Rendering<'a>>,
+    theme_override: Option<Theme<'a>>,
+    spinner_style_override: Option<Style>,
+    annotation_style_override: Option<Style>,
+    rendering: RenderingState<'a>,
 }
 
-impl<'a, S, F> ProgressStream<'a, S, F> {
+impl<S, F> ProgressStream<'_, S, F> {
     fn new(inner: S, fraction_fn: F) -> Self {
         Self {
             inner,
@@ -66,29 +83,10 @@ impl<'a, S, F> ProgressStream<'a, S, F> {
             messages: stream::pending(),
             state: State::new(),
             current: 0,
-            rendering: None,
-        }
-    }
-
-    fn standalone(inner: S, fraction_fn: F, theme: Theme<'a>) -> Self {
-        let is_tty = std::io::stdout().is_terminal();
-        let ticks = theme.spinner.ticks();
-        let line = Line::new(&theme);
-        Self {
-            inner,
-            fraction_fn,
-            messages: stream::pending(),
-            state: State::new(),
-            current: 0,
-            rendering: Some(Rendering {
-                line,
-                ticks,
-                spinner_char: None,
-                spinner_style: Style::new(),
-                annotation_style: Style::new(),
-                is_tty,
-                _guard: CursorGuard { is_tty },
-            }),
+            theme_override: None,
+            spinner_style_override: None,
+            annotation_style_override: None,
+            rendering: RenderingState::Pending,
         }
     }
 }
@@ -106,6 +104,26 @@ impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
         self
     }
 
+    /// Render this row with `theme`. Drives standalone rendering when the stream is polled
+    /// directly; overrides the parent [`Group`]'s theme when pushed.
+    pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
+        self.theme_override = Some(theme.into());
+        self
+    }
+
+    /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
+    pub fn with_spinner_style(mut self, style: Style) -> Self {
+        self.spinner_style_override = Some(style);
+        self
+    }
+
+    /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
+    /// default.
+    pub fn with_annotation_style(mut self, style: Style) -> Self {
+        self.annotation_style_override = Some(style);
+        self
+    }
+
     /// Replace the displayed message each time `messages` yields a value.
     pub fn with_messages<S2>(self, messages: S2) -> ProgressStream<'a, S, F, S2>
     where
@@ -118,12 +136,15 @@ impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
             messages,
             state: self.state,
             current: self.current,
+            theme_override: self.theme_override,
+            spinner_style_override: self.spinner_style_override,
+            annotation_style_override: self.annotation_style_override,
             rendering: self.rendering,
         }
     }
 }
 
-impl<S, F, M> Progressive for ProgressStream<'_, S, F, M> {
+impl<'a, S, F, M> Progressive<'a> for ProgressStream<'a, S, F, M> {
     fn label(&self) -> Option<&str> {
         self.state.label()
     }
@@ -142,6 +163,25 @@ impl<S, F, M> Progressive for ProgressStream<'_, S, F, M> {
     fn rate(&self) -> Option<f64> {
         self.state.rate()
     }
+    fn detach_rendering(&mut self) {
+        self.rendering = RenderingState::Detached;
+    }
+    fn theme(&self) -> Option<&Theme<'a>> {
+        self.theme_override.as_ref()
+    }
+    fn spinner_style(&self) -> Option<Style> {
+        self.spinner_style_override
+    }
+    fn annotation_style(&self) -> Option<Style> {
+        self.annotation_style_override
+    }
+    fn show_elapsed_time(&self) -> Option<bool> {
+        if self.state.with_elapsed_time {
+            Some(true)
+        } else {
+            None
+        }
+    }
 }
 
 impl<S, F, M> Stream for ProgressStream<'_, S, F, M>
@@ -156,7 +196,14 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        if let Some(r) = this.rendering.as_mut() {
+        materialize_rendering(
+            &mut this.rendering,
+            this.theme_override.as_ref(),
+            this.spinner_style_override,
+            this.annotation_style_override,
+        );
+
+        if let RenderingState::Active(r) = &mut this.rendering {
             if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
                 r.spinner_char = ch;
             }
@@ -171,7 +218,7 @@ where
                 this.current += 1;
                 let completed = (this.fraction_fn)(this.current, &item);
                 this.state.set_progress(completed);
-                if let Some(r) = this.rendering.as_mut() {
+                if let RenderingState::Active(r) = &mut this.rendering {
                     let elapsed = if this.state.with_elapsed_time {
                         this.state.elapsed()
                     } else {
@@ -189,7 +236,7 @@ where
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                if let Some(r) = this.rendering.as_ref() {
+                if let RenderingState::Active(r) = &this.rendering {
                     Line::standalone_clear(r.is_tty);
                 }
                 Poll::Ready(None)
@@ -201,9 +248,10 @@ where
 
 /// Extension trait that adds progress display to streams.
 pub trait StreamExt: Stream {
-    /// Wrap this stream as a standalone [`ProgressStream`] driven by `theme` and a fraction
-    /// closure. The closure receives the monotonically increasing item index (starting at 1) and
-    /// a reference to the item.
+    /// Wrap this stream as a [`ProgressStream`] configured for standalone rendering with `theme`
+    /// and a fraction closure. Sugar for `self.progressive(fraction_fn).with_theme(theme)`. The
+    /// closure receives the monotonically increasing item index (starting at 1) and a reference
+    /// to the item.
     fn progress<'a, F>(
         self,
         theme: impl Into<Theme<'a>>,
@@ -213,11 +261,12 @@ pub trait StreamExt: Stream {
         Self: Sized,
         F: FnMut(usize, &Self::Item) -> f64 + Unpin,
     {
-        ProgressStream::standalone(self, fraction_fn, theme.into())
+        self.progressive(fraction_fn).with_theme(theme)
     }
 
-    /// Wrap this stream as a tracked-only [`ProgressStream`] for [`Group::push`]. Does not render
-    /// on its own.
+    /// Wrap this stream as an unconfigured [`ProgressStream`]. Awaited directly it renders with
+    /// [`Theme::default()`]; chain [`with_theme`](ProgressStream::with_theme) for a custom theme,
+    /// or push into a [`Group`] to inherit the Group's theme.
     fn progressive<'a, F>(self, fraction_fn: F) -> ProgressStream<'a, Self, F>
     where
         Self: Sized,
@@ -226,9 +275,9 @@ pub trait StreamExt: Stream {
         ProgressStream::new(self, fraction_fn)
     }
 
-    /// Wrap this stream as a standalone [`ProgressBytesStream`] driven by `theme` and a byte-delta
-    /// closure. The builder accumulates the cumulative byte counter, EWMA rate and (when a total
-    /// is set) the progress fraction.
+    /// Wrap this stream as a [`ProgressBytesStream`] configured for standalone rendering with
+    /// `theme` and a byte-delta closure. Sugar for
+    /// `self.progressive_bytes(bytes_fn).with_theme(theme)`.
     fn progress_bytes<'a, F>(
         self,
         theme: impl Into<Theme<'a>>,
@@ -238,10 +287,11 @@ pub trait StreamExt: Stream {
         Self: Sized,
         F: FnMut(&Self::Item) -> u64 + Unpin,
     {
-        ProgressBytesStream::standalone(self, bytes_fn, theme.into())
+        self.progressive_bytes(bytes_fn).with_theme(theme)
     }
 
-    /// Wrap this stream as a tracked-only [`ProgressBytesStream`] for [`Group::push`].
+    /// Wrap this stream as an unconfigured [`ProgressBytesStream`]. Same theme-inheritance rules
+    /// as [`progressive`](Self::progressive).
     fn progressive_bytes<'a, F>(self, bytes_fn: F) -> ProgressBytesStream<'a, Self, F>
     where
         Self: Sized,
@@ -259,38 +309,23 @@ pub struct ProgressBytesStream<'a, S, F, M = Pending<&'static str>> {
     bytes_fn: F,
     messages: M,
     state: State,
-    rendering: Option<Rendering<'a>>,
+    theme_override: Option<Theme<'a>>,
+    spinner_style_override: Option<Style>,
+    annotation_style_override: Option<Style>,
+    rendering: RenderingState<'a>,
 }
 
-impl<'a, S, F> ProgressBytesStream<'a, S, F> {
+impl<S, F> ProgressBytesStream<'_, S, F> {
     fn new(inner: S, bytes_fn: F) -> Self {
         Self {
             inner,
             bytes_fn,
             messages: stream::pending(),
             state: State::new(),
-            rendering: None,
-        }
-    }
-
-    fn standalone(inner: S, bytes_fn: F, theme: Theme<'a>) -> Self {
-        let is_tty = std::io::stdout().is_terminal();
-        let ticks = theme.spinner.ticks();
-        let line = Line::new(&theme);
-        Self {
-            inner,
-            bytes_fn,
-            messages: stream::pending(),
-            state: State::new(),
-            rendering: Some(Rendering {
-                line,
-                ticks,
-                spinner_char: None,
-                spinner_style: Style::new(),
-                annotation_style: Style::new(),
-                is_tty,
-                _guard: CursorGuard { is_tty },
-            }),
+            theme_override: None,
+            spinner_style_override: None,
+            annotation_style_override: None,
+            rendering: RenderingState::Pending,
         }
     }
 }
@@ -314,6 +349,26 @@ impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
         self
     }
 
+    /// Render this row with `theme`. Drives standalone rendering when the stream is polled
+    /// directly; overrides the parent [`Group`]'s theme when pushed.
+    pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
+        self.theme_override = Some(theme.into());
+        self
+    }
+
+    /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
+    pub fn with_spinner_style(mut self, style: Style) -> Self {
+        self.spinner_style_override = Some(style);
+        self
+    }
+
+    /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
+    /// default.
+    pub fn with_annotation_style(mut self, style: Style) -> Self {
+        self.annotation_style_override = Some(style);
+        self
+    }
+
     /// Replace the displayed message each time `messages` yields a value.
     pub fn with_messages<S2>(self, messages: S2) -> ProgressBytesStream<'a, S, F, S2>
     where
@@ -325,12 +380,15 @@ impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
             bytes_fn: self.bytes_fn,
             messages,
             state: self.state,
+            theme_override: self.theme_override,
+            spinner_style_override: self.spinner_style_override,
+            annotation_style_override: self.annotation_style_override,
             rendering: self.rendering,
         }
     }
 }
 
-impl<S, F, M> Progressive for ProgressBytesStream<'_, S, F, M> {
+impl<'a, S, F, M> Progressive<'a> for ProgressBytesStream<'a, S, F, M> {
     fn label(&self) -> Option<&str> {
         self.state.label()
     }
@@ -349,6 +407,25 @@ impl<S, F, M> Progressive for ProgressBytesStream<'_, S, F, M> {
     fn rate(&self) -> Option<f64> {
         self.state.rate()
     }
+    fn detach_rendering(&mut self) {
+        self.rendering = RenderingState::Detached;
+    }
+    fn theme(&self) -> Option<&Theme<'a>> {
+        self.theme_override.as_ref()
+    }
+    fn spinner_style(&self) -> Option<Style> {
+        self.spinner_style_override
+    }
+    fn annotation_style(&self) -> Option<Style> {
+        self.annotation_style_override
+    }
+    fn show_elapsed_time(&self) -> Option<bool> {
+        if self.state.with_elapsed_time {
+            Some(true)
+        } else {
+            None
+        }
+    }
 }
 
 impl<S, F, M> Stream for ProgressBytesStream<'_, S, F, M>
@@ -363,7 +440,14 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        if let Some(r) = this.rendering.as_mut() {
+        materialize_rendering(
+            &mut this.rendering,
+            this.theme_override.as_ref(),
+            this.spinner_style_override,
+            this.annotation_style_override,
+        );
+
+        if let RenderingState::Active(r) = &mut this.rendering {
             if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
                 r.spinner_char = ch;
             }
@@ -377,7 +461,7 @@ where
             Poll::Ready(Some(item)) => {
                 let delta = (this.bytes_fn)(&item);
                 this.state.add_bytes(delta);
-                if let Some(r) = this.rendering.as_mut() {
+                if let RenderingState::Active(r) = &mut this.rendering {
                     let elapsed = if this.state.with_elapsed_time {
                         this.state.elapsed()
                     } else {
@@ -395,7 +479,7 @@ where
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                if let Some(r) = this.rendering.as_ref() {
+                if let RenderingState::Active(r) = &this.rendering {
                     Line::standalone_clear(r.is_tty);
                 }
                 Poll::Ready(None)
@@ -403,4 +487,28 @@ where
             Poll::Pending => Poll::Pending,
         }
     }
+}
+
+fn materialize_rendering<'a>(
+    rendering: &mut RenderingState<'a>,
+    theme_override: Option<&Theme<'a>>,
+    spinner_style_override: Option<Style>,
+    annotation_style_override: Option<Style>,
+) {
+    if !matches!(rendering, RenderingState::Pending) {
+        return;
+    }
+    let theme = theme_override.cloned().unwrap_or_default();
+    let is_tty = std::io::stdout().is_terminal();
+    let ticks = theme.spinner.ticks();
+    let line = Line::new(&theme);
+    *rendering = RenderingState::Active(Rendering {
+        line,
+        ticks,
+        spinner_char: None,
+        spinner_style: spinner_style_override.unwrap_or_default(),
+        annotation_style: annotation_style_override.unwrap_or_default(),
+        is_tty,
+        _guard: CursorGuard { is_tty },
+    });
 }

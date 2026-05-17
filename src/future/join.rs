@@ -1,10 +1,9 @@
 //! Drive N concurrent futures and render them as a single progress line.
 //!
-//! [`Join`] owns its inner futures and polls them concurrently. Its
-//! [`Progressive::progress`](crate::progressive::Progressive::progress) is the completion
-//! fraction (`completed / total`), so the bar fills from 0/N to N/N as each future resolves.
-//! Push one into a [`Group`](super::Group) to render many futures as one line alongside other
-//! independent rows, or call [`standalone`](Join::standalone) for a self-contained row.
+//! [`Join`] owns its inner futures and polls them concurrently. Its [`Progressive::progress`] is
+//! the completion fraction (`completed / total`), so the bar fills from 0/N to N/N as each future
+//! resolves. Push one into a [`Group`](super::Group) to render many futures as one line alongside
+//! other independent rows, or call [`with_theme`](Join::with_theme) for a self-contained row.
 
 use std::fmt::Display;
 use std::future::Future;
@@ -17,7 +16,7 @@ use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 use owo_colors::Style;
 
-use super::Rendering;
+use super::{Rendering, RenderingState};
 use crate::line::{FrameContext, Line};
 use crate::progressive::Progressive;
 use crate::state::State;
@@ -36,14 +35,17 @@ pub struct Join<'a, F: Future, M = Pending<&'static str>> {
     total: usize,
     messages: M,
     state: State,
-    rendering: Option<Rendering<'a>>,
+    theme_override: Option<Theme<'a>>,
+    spinner_style_override: Option<Style>,
+    annotation_style_override: Option<Style>,
+    rendering: RenderingState<'a>,
 }
 
-/// Construct a tracked-only [`Join`] for use with [`Group::push`](super::Group::push).
+/// Construct a [`Join`] from an iterable of futures sharing an `Output` type.
 ///
-/// Accepts any [`IntoIterator`] of futures sharing an `Output` type — `Vec<F>`, arrays, or any
-/// adapter chain. For a standalone row, chain [`.standalone(theme)`](Join::standalone) onto the
-/// result.
+/// Accepts any [`IntoIterator`] of futures — `Vec<F>`, arrays, or any adapter chain. Without
+/// [`with_theme`](Join::with_theme) the result inherits the parent `Group`'s theme when pushed,
+/// with `with_theme` it renders standalone or overrides the Group's theme per-row.
 pub fn join<I>(futs: I) -> Join<'static, I::Item>
 where
     I: IntoIterator,
@@ -52,9 +54,10 @@ where
     Join::new(futs)
 }
 
-impl<'a, F: Future> Join<'a, F> {
-    /// Tracked-only constructor. The returned `Join` does not render on its own — push it into a
-    /// [`Group`](super::Group).
+impl<F: Future> Join<'_, F> {
+    /// Construct a `Join` with no theme set. Awaited directly it renders with [`Theme::default()`];
+    /// chain [`with_theme`](Self::with_theme) for a custom theme, or push it into a
+    /// [`Group`](super::Group) to inherit the Group's theme.
     pub fn new<I>(futs: I) -> Self
     where
         I: IntoIterator<Item = F>,
@@ -68,28 +71,33 @@ impl<'a, F: Future> Join<'a, F> {
             total,
             messages: stream::pending(),
             state: State::new(),
-            rendering: None,
+            theme_override: None,
+            spinner_style_override: None,
+            annotation_style_override: None,
+            rendering: RenderingState::Pending,
         }
     }
 }
 
 impl<'a, F: Future, M> Join<'a, F, M> {
-    /// Upgrade this `Join` into a standalone row rendered with `theme`. The returned value drives
-    /// its own terminal line when awaited.
-    pub fn standalone(mut self, theme: impl Into<Theme<'a>>) -> Self {
-        let theme = theme.into();
-        let is_tty = std::io::stdout().is_terminal();
-        let ticks = theme.spinner.ticks();
-        let line = Line::new(&theme);
-        self.rendering = Some(Rendering {
-            line,
-            ticks,
-            spinner_char: None,
-            spinner_style: Style::new(),
-            annotation_style: Style::new(),
-            is_tty,
-            _guard: CursorGuard { is_tty },
-        });
+    /// Render this row with `theme`. Used for both the standalone path (drives the spinner /
+    /// bar / cursor on its own line when awaited) and the per-row override path inside a
+    /// [`Group`](super::Group).
+    pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
+        self.theme_override = Some(theme.into());
+        self
+    }
+
+    /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
+    pub fn with_spinner_style(mut self, style: Style) -> Self {
+        self.spinner_style_override = Some(style);
+        self
+    }
+
+    /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
+    /// default.
+    pub fn with_annotation_style(mut self, style: Style) -> Self {
+        self.annotation_style_override = Some(style);
         self
     }
 
@@ -118,12 +126,15 @@ impl<'a, F: Future, M> Join<'a, F, M> {
             total: self.total,
             messages,
             state: self.state,
+            theme_override: self.theme_override,
+            spinner_style_override: self.spinner_style_override,
+            annotation_style_override: self.annotation_style_override,
             rendering: self.rendering,
         }
     }
 }
 
-impl<F: Future, M> Progressive for Join<'_, F, M> {
+impl<'a, F: Future, M> Progressive<'a> for Join<'a, F, M> {
     fn label(&self) -> Option<&str> {
         self.state.label()
     }
@@ -139,6 +150,30 @@ impl<F: Future, M> Progressive for Join<'_, F, M> {
             Some(self.completed as f64 / self.total as f64)
         }
     }
+
+    fn detach_rendering(&mut self) {
+        self.rendering = RenderingState::Detached;
+    }
+
+    fn theme(&self) -> Option<&Theme<'a>> {
+        self.theme_override.as_ref()
+    }
+
+    fn spinner_style(&self) -> Option<Style> {
+        self.spinner_style_override
+    }
+
+    fn annotation_style(&self) -> Option<Style> {
+        self.annotation_style_override
+    }
+
+    fn show_elapsed_time(&self) -> Option<bool> {
+        if self.state.with_elapsed_time {
+            Some(true)
+        } else {
+            None
+        }
+    }
 }
 
 impl<F, M> Future for Join<'_, F, M>
@@ -152,9 +187,32 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
+
+        if matches!(this.rendering, RenderingState::Pending) {
+            let theme = this.theme_override.clone().unwrap_or_default();
+            let is_tty = std::io::stdout().is_terminal();
+            let ticks = theme.spinner.ticks();
+            let line = Line::new(&theme);
+            // `standalone_render` reads progress from `State`, but `Join`'s `progress()` is
+            // derived from `completed / total`. Mirror it into state so the bar renders.
+            if this.total > 0 {
+                this.state
+                    .set_progress(this.completed as f64 / this.total as f64);
+            }
+            this.rendering = RenderingState::Active(Rendering {
+                line,
+                ticks,
+                spinner_char: None,
+                spinner_style: this.spinner_style_override.unwrap_or_default(),
+                annotation_style: this.annotation_style_override.unwrap_or_default(),
+                is_tty,
+                _guard: CursorGuard { is_tty },
+            });
+        }
+
         let mut dirty = false;
 
-        if let Some(r) = this.rendering.as_mut() {
+        if let RenderingState::Active(r) = &mut this.rendering {
             if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
                 r.spinner_char = ch;
                 dirty = true;
@@ -171,7 +229,7 @@ where
             match this.futs[i].as_mut().poll(cx) {
                 Poll::Ready(out) => {
                     this.results.push(out);
-                    let _ = this.futs.swap_remove(i);
+                    drop(this.futs.swap_remove(i));
                     this.completed += 1;
                     if this.total > 0 {
                         this.state
@@ -183,7 +241,7 @@ where
             }
         }
 
-        if let Some(r) = this.rendering.as_mut() {
+        if let RenderingState::Active(r) = &mut this.rendering {
             if !this.futs.is_empty() && dirty {
                 let elapsed = if this.state.with_elapsed_time {
                     this.state.elapsed()
@@ -202,7 +260,7 @@ where
         }
 
         if this.futs.is_empty() {
-            if let Some(r) = this.rendering.as_ref() {
+            if let RenderingState::Active(r) = &this.rendering {
                 Line::standalone_clear(r.is_tty);
             }
             Poll::Ready(std::mem::take(&mut this.results))

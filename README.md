@@ -9,12 +9,14 @@ spinners.
 
 The crate is built around two extension traits and two containers:
 
-- [`FutureExt`] adds `.progress(theme)` (standalone), `.progressive()`
-  (for Group), and the `.with_label(...)` / `.with_messages(...)` /
+- [`FutureExt`] adds `.progress(theme)` (sugar for
+  `.progressive().with_theme(theme)`), `.progressive()` (unconfigured;
+  inherits the parent Group's theme or renders with `Theme::default()` if
+  awaited directly), and the `.with_label(...)` / `.with_messages(...)` /
   `.with_progress(...)` / `.with_elapsed_time()` setters that implicitly lift a
-  bare [`Future`] into a tracked-only `ProgressFuture` for Group.
+  bare [`Future`] into a `ProgressFuture`.
 - [`StreamExt`] adds `.progress(theme, ...)` / `.progress_bytes(theme, ...)`
-  (standalone) and `.progressive()` / `.progressive_bytes()` (for Group) to
+  (sugar) and `.progressive()` / `.progressive_bytes()` (unconfigured) to
   any [`Stream`].
 - [`future::Group`] runs many [`Future`]s concurrently, rendering one line
   per task.

@@ -104,7 +104,7 @@ impl State {
     }
 }
 
-impl Progressive for State {
+impl Progressive<'_> for State {
     fn label(&self) -> Option<&str> {
         self.label.as_deref()
     }

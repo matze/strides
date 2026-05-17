@@ -11,16 +11,23 @@
 //! [`ProgressStream`](crate::stream::ProgressStream),
 //! [`ProgressBytesStream`](crate::stream::ProgressBytesStream)) already implement [`Progressive`];
 //! user types can implement it directly to push custom work into a Group.
+//!
+//! The lifetime parameter `'a` ties any per-row [`Theme`] override to the same lifetime the
+//! adapter's other borrowed data lives for. Implementations that don't supply a theme override
+//! can use `impl<'a> Progressive<'a> for MyType` regardless of `'a`.
 
 use std::future::Future;
 
 use futures_lite::Stream;
+use owo_colors::Style;
+
+use crate::Theme;
 
 /// Read-only view of an item's current progress state.
 ///
 /// Methods return "nothing to render" by default. Adapters override only the fields they track.
 /// Callers (Groups, standalone wrappers) read these on every frame and forward to the layout.
-pub trait Progressive {
+pub trait Progressive<'a> {
     /// Static label shown in the [`Label`](crate::layout::Segment::Label) segment.
     fn label(&self) -> Option<&str> {
         None
@@ -50,20 +57,49 @@ pub trait Progressive {
     fn rate(&self) -> Option<f64> {
         None
     }
+
+    /// Disable any self-rendering this value would do when polled directly.
+    ///
+    /// Called by [`Group::push`](crate::future::Group::push) (and the stream-side equivalent)
+    /// before the first poll: Groups own the rendering for their rows, so a row that would also
+    /// render standalone must be neutralised first. The default is a no-op; built-in adapters
+    /// override it to drop their rendering bits.
+    fn detach_rendering(&mut self) {}
+
+    /// Per-row theme override. Returning `Some` tells the parent [`Group`](crate::future::Group)
+    /// to render this row with the given theme instead of the Group's default.
+    fn theme(&self) -> Option<&Theme<'a>> {
+        None
+    }
+
+    /// Per-row spinner style override. `None` means "use the Group's default".
+    fn spinner_style(&self) -> Option<Style> {
+        None
+    }
+
+    /// Per-row annotation (label) style override. `None` means "use the Group's default".
+    fn annotation_style(&self) -> Option<Style> {
+        None
+    }
+
+    /// Per-row override for showing elapsed time. `None` means "use the Group's default".
+    fn show_elapsed_time(&self) -> Option<bool> {
+        None
+    }
 }
 
 /// A [`Future`] that also reports progress via [`Progressive`].
 ///
-/// Blanket-implemented for any `T: Future + Progressive`. This is the trait object stored by
+/// Blanket-implemented for any `T: Future + Progressive<'a>`. This is the trait object stored by
 /// [`future::Group`](crate::future::Group).
-pub trait ProgressiveFuture: Future + Progressive {}
+pub trait ProgressiveFuture<'a>: Future + Progressive<'a> {}
 
-impl<T: Future + Progressive> ProgressiveFuture for T {}
+impl<'a, T: Future + Progressive<'a>> ProgressiveFuture<'a> for T {}
 
 /// A [`Stream`] that also reports progress via [`Progressive`].
 ///
-/// Blanket-implemented for any `T: Stream + Progressive`. This is the trait object stored by
+/// Blanket-implemented for any `T: Stream + Progressive<'a>`. This is the trait object stored by
 /// [`stream::Group`](crate::stream::Group).
-pub trait ProgressiveStream: Stream + Progressive {}
+pub trait ProgressiveStream<'a>: Stream + Progressive<'a> {}
 
-impl<T: Stream + Progressive> ProgressiveStream for T {}
+impl<'a, T: Stream + Progressive<'a>> ProgressiveStream<'a> for T {}

@@ -44,7 +44,7 @@ impl<'a> Line<'a> {
 
     /// Render `item` together with `frame` into this line's internal buffer and return a borrowed
     /// view of the rendered bytes. The buffer is cleared before each render.
-    pub(crate) fn render_into<P: Progressive + ?Sized>(
+    pub(crate) fn render_into<'b, P: Progressive<'b> + ?Sized>(
         &mut self,
         item: &P,
         frame: &FrameContext,
@@ -71,7 +71,7 @@ impl<'a> Line<'a> {
 
     /// Render `item` and write the result to stdout as the single line of a standalone wrapper:
     /// hide cursor, clear current line, write content, flush. No-op when `is_tty` is false.
-    pub(crate) fn standalone_render<P: Progressive + ?Sized>(
+    pub(crate) fn standalone_render<'b, P: Progressive<'b> + ?Sized>(
         &mut self,
         item: &P,
         frame: &FrameContext,

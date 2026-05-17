@@ -4,6 +4,20 @@
 //! For this strides provides utilities to integrate UI elements as part of the [`Future`] and
 //! [`Stream`] abstractions.
 //!
+//! ## Modes of operation
+//!
+//! Pick a mode by how many tasks you have and how many terminal rows you want to spend on them:
+//!
+//! | Tasks | Rows      | Futures                                                  | Streams |
+//! |-------|-----------|----------------------------------------------------------|---------|
+//! | 1     | 1         | `fut.progress(theme).await`                              | `s.progress(theme, ...)` / `s.progress_bytes(theme, ...)` |
+//! | N     | N         | [`future::Group::new`] + [`push`](future::Group::push) per task | [`stream::Group::new`] + [`push`](stream::Group::push) per stream |
+//! | N     | 1         | [`join`](future::join())`(futs).with_theme(theme).await` | n/a |
+//! | N     | 1-of-many | [`group.push(join(futs).with_label(...))`](future::join()) | n/a |
+//!
+//! The last row collapses many futures into a single progress line that sits alongside other rows
+//! in a [`future::Group`]. Streams have no `join` collapse — push each stream as its own row.
+//!
 //! ## Spinners
 //!
 //! A spinner is a UI element that represents ongoing work. It is usually iconified as a circular

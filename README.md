@@ -33,6 +33,22 @@ ordered list of [`Segment`]s controlling the order, spacing and formatting of
 each progress line. See [`spinner::styles`] and [`bar::styles`] for predefined
 variants.
 
+
+Pick a mode by how many tasks you have and how many terminal rows you want to
+spend on them:
+
+| Tasks | Rows  | Futures                                          | Streams                                                   |
+|-------|-------|--------------------------------------------------|-----------------------------------------------------------|
+| 1     | 1     | `fut.progress(theme).await`                      | `s.progress(theme, ...)` / `s.progress_bytes(theme, ...)` |
+| N     | N     | `Group::new(theme)` + `group.push(fut)` per task | `stream::Group::new(theme)` + `group.push(s.progressive(...))` per stream |
+| N     | 1     | `join(futs).with_theme(theme).await`             | n/a                                                       |
+| N     | 1-of-many | `group.push(join(futs).with_label(...))`     | n/a                                                       |
+
+The last row uses [`future::join`] inside a [`future::Group`]: many futures
+collapse into a single progress line that sits alongside other rows in the
+Group. Streams do not have a `join` collapse, s— push each stream as its own
+row.
+
 [`Future`]: https://doc.rust-lang.org/std/future/trait.Future.html
 [`Stream`]: https://docs.rs/futures-lite/latest/futures_lite/stream/trait.Stream.html
 [`FutureExt`]: https://docs.rs/strides/latest/strides/future/trait.FutureExt.html
@@ -47,6 +63,7 @@ variants.
 [`Segment`]: https://docs.rs/strides/latest/strides/layout/enum.Segment.html
 [`spinner::styles`]: https://docs.rs/strides/latest/strides/spinner/styles/index.html
 [`bar::styles`]: https://docs.rs/strides/latest/strides/bar/styles/index.html
+[`future::join`]: https://docs.rs/strides/latest/strides/future/fn.join.html
 
 
 ## Example

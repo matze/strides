@@ -223,8 +223,8 @@ where
 
         match this.inner.as_mut().poll_next(cx) {
             Poll::Ready(Some(item)) => {
-                *this.current += 1;
                 let completed = (this.fraction_fn)(*this.current, &item);
+                *this.current += 1;
                 this.state.set_progress(completed);
                 if let RenderingState::Active(r) = &mut *this.rendering {
                     let elapsed = if this.state.with_elapsed_time {
@@ -258,8 +258,8 @@ where
 pub trait StreamExt: Stream {
     /// Wrap this stream as a [`ProgressStream`] configured for standalone rendering with `theme`
     /// and a fraction closure. Sugar for `self.progressive(fraction_fn).with_theme(theme)`. The
-    /// closure receives the monotonically increasing item index (starting at 1) and a reference
-    /// to the item.
+    /// closure receives the zero-based item index and a reference to the item, matching
+    /// [`Iterator::enumerate`].
     fn progress<'a, F>(
         self,
         theme: impl Into<Theme<'a>>,
@@ -745,8 +745,25 @@ fn materialize_rendering<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::*;
     use futures_lite::{future, stream, StreamExt as FlStreamExt};
+
+    #[test]
+    fn progress_closure_sees_zero_based_index() {
+        future::block_on(async {
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let recorded = seen.clone();
+            let s = stream::iter(['a', 'b', 'c']).progressive(move |i, _| {
+                recorded.lock().unwrap().push(i);
+                0.0
+            });
+            let mut s = Box::pin(s);
+            while s.next().await.is_some() {}
+            assert_eq!(*seen.lock().unwrap(), vec![0, 1, 2]);
+        });
+    }
 
     #[test]
     fn count_seeds_total_from_size_hint() {

@@ -34,7 +34,7 @@ fn main() {
     future::block_on(async {
         let work = async {
             let sum = ticks
-                .progress(theme, |index, _| index as f64 / 100.0)
+                .progress(theme, |index, _| (index + 1) as f64 / 100.0)
                 .with_messages(messages)
                 .fold(0, |acc, x| acc + x)
                 .await;

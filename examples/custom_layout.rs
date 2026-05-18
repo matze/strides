@@ -37,7 +37,7 @@ fn main() {
             .with_layout(layout);
 
         futures_lite::stream::iter(0..100)
-            .progress(theme, |i, _| i as f64 / 100.0)
+            .progress(theme, |i, _| (i + 1) as f64 / 100.0)
             .with_elapsed_time()
             .with_label("downloading")
             .then(|item| async move {

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- The fraction closure passed to `StreamExt::progress` / `progressive` now
+  receives a zero-based item index, matching `Iterator::enumerate`. Previously
+  the index was incremented before the closure call, so the first item saw `1`
+  and a `|i, _| i as f64 / N as f64` closure reached `1.0` on item `N`. Update
+  such closures to `(i + 1) as f64 / N as f64` to keep the old shape, or
+  migrate to `StreamExt::progress_count` (see below).
+
+### Changes
+
+- Add `StreamExt::progress_count` / `progressive_count` and the
+  `ProgressCountStream` adapter: items are counted internally and the bar
+  fraction is derived from a known total. The total is seeded from
+  `Stream::size_hint` so bounded sources like `iter(Vec)` and `iter(0..n)`
+  render a filled bar with no extra ceremony; `with_len(n)` overrides when the
+  hint is missing or inaccurate.
+
 
 ## 1.0.0-rc.2
 

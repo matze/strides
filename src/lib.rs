@@ -10,7 +10,7 @@
 //!
 //! | Tasks | Rows      | Futures                                                  | Streams |
 //! |-------|-----------|----------------------------------------------------------|---------|
-//! | 1     | 1         | `fut.progress(theme).await`                              | `s.progress(theme, ...)` / `s.progress_bytes(theme, ...)` |
+//! | 1     | 1         | `fut.progress(theme).await`                              | `s.progress(theme, ...)` / `s.progress_count(theme)` / `s.progress_bytes(theme, ...)` |
 //! | N     | N         | [`future::Group::new`] + [`push`](future::Group::push) per task | [`stream::Group::new`] + [`push`](stream::Group::push) per stream |
 //! | N     | 1         | [`join`](future::join())`(futs).with_theme(theme).await` | n/a |
 //! | N     | 1-of-many | [`group.push(join(futs).with_label(...))`](future::join()) | n/a |
@@ -134,8 +134,12 @@
 //! ## Streams
 //!
 //! Import the [`StreamExt`](crate::stream::StreamExt) extension trait. Standalone:
-//! [`progress(theme, fraction_fn)`](crate::stream::StreamExt::progress) when each item carries
-//! enough information to compute completion, or
+//! [`progress_count(theme)`](crate::stream::StreamExt::progress_count) for "count items, derive
+//! the bar from the total" — bounded streams like `iter(Vec)` and `iter(0..n)` pick up the total
+//! from [`Stream::size_hint`] automatically; pair with
+//! [`with_len(n)`](crate::stream::ProgressCountStream::with_len) when the hint is absent or
+//! inaccurate. [`progress(theme, fraction_fn)`](crate::stream::StreamExt::progress) when each item
+//! carries enough information to compute completion, or
 //! [`progress_bytes(theme, bytes_fn)`](crate::stream::StreamExt::progress_bytes) for byte-oriented
 //! streams (the wrapper accumulates a counter, derives a smoothed rate, and — when
 //! [`with_len`](crate::stream::ProgressBytesStream::with_len) is set — derives the progress
@@ -152,9 +156,8 @@
 //!     .with_bar(bar::styles::SHADED);
 //!
 //! # futures_lite::future::block_on(async {
-//! let total = 100;
-//! stream::iter(0..total)
-//!     .progress(theme, move |i, _| i as f64 / total as f64)
+//! stream::iter(0..100)
+//!     .progress_count(theme)
 //!     .for_each(|_| {})
 //!     .await;
 //! # });

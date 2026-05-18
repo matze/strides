@@ -1,20 +1,23 @@
 //! Progress integration for streams.
 //!
-//! Three entry points on [`StreamExt`]:
+//! Four entry points on [`StreamExt`]:
 //!
 //! - [`progress`](StreamExt::progress) takes a fraction closure; appropriate when each item
 //!   already carries enough information to compute completion in `0.0..=1.0`. Sugar for
 //!   `self.progressive(fraction_fn).with_theme(theme)`.
+//! - [`progress_count`](StreamExt::progress_count) counts items internally; pair with
+//!   [`with_len`](ProgressCountStream::with_len) to derive the bar fraction from `count / total`.
+//!   The closure-free path for "I know how many items will flow through".
 //! - [`progress_bytes`](StreamExt::progress_bytes) takes a byte-delta closure. The builder owns
 //!   the cumulative counter, EWMA rate and (when
 //!   [`with_len`](ProgressBytesStream::with_len) is set) the derived progress fraction. Pair with
 //!   [`Segment::bytes`](crate::layout::Segment::bytes),
 //!   [`Segment::rate`](crate::layout::Segment::rate) and [`Segment::eta`](crate::layout::Segment::eta)
 //!   in a custom [`Layout`](crate::layout::Layout) for byte / throughput / ETA columns.
-//! - [`progressive`](StreamExt::progressive) and [`progressive_bytes`](StreamExt::progressive_bytes)
-//!   produce unconfigured adapters. Without [`with_theme`](ProgressStream::with_theme) they
-//!   inherit the parent [`Group`]'s theme; with `with_theme` they render standalone or override
-//!   the Group's theme per-row.
+//! - [`progressive`](StreamExt::progressive), [`progressive_count`](StreamExt::progressive_count)
+//!   and [`progressive_bytes`](StreamExt::progressive_bytes) produce unconfigured adapters. Without
+//!   [`with_theme`](ProgressStream::with_theme) they inherit the parent [`Group`]'s theme; with
+//!   `with_theme` they render standalone or override the Group's theme per-row.
 //!
 //! Dynamic messages compose on top of any builder via
 //! [`with_messages`](ProgressStream::with_messages).
@@ -304,6 +307,26 @@ pub trait StreamExt: Stream {
     {
         ProgressBytesStream::new(self, bytes_fn)
     }
+
+    /// Wrap this stream as a [`ProgressCountStream`] configured for standalone rendering with
+    /// `theme`. Items are counted internally; chain
+    /// [`with_len`](ProgressCountStream::with_len) to enable the bar. Sugar for
+    /// `self.progressive_count().with_theme(theme)`.
+    fn progress_count<'a>(self, theme: impl Into<Theme<'a>>) -> ProgressCountStream<'a, Self>
+    where
+        Self: Sized,
+    {
+        self.progressive_count().with_theme(theme)
+    }
+
+    /// Wrap this stream as an unconfigured [`ProgressCountStream`]. Same theme-inheritance rules
+    /// as [`progressive`](Self::progressive).
+    fn progressive_count<'a>(self) -> ProgressCountStream<'a, Self>
+    where
+        Self: Sized,
+    {
+        ProgressCountStream::new(self)
+    }
 }
 
 impl<S> StreamExt for S where S: Stream {}
@@ -498,6 +521,204 @@ where
     }
 }
 
+pin_project! {
+    /// A [`Stream`] wrapped to count items and derive a progress fraction from a known total.
+    ///
+    /// The total is seeded from [`Stream::size_hint`]'s upper bound at construction, so bounded
+    /// sources like `iter(Vec)` and `iter(0..n)` render a filled bar with no extra ceremony.
+    /// Streams whose hint upper-bound is `None` (channels, `pending`, most combinators that can
+    /// shorten or extend) render only the spinner, label, message and elapsed-time segments.
+    /// [`with_len`](Self::with_len) overrides the hint when the caller knows better.
+    pub struct ProgressCountStream<'a, S, M = Pending<&'static str>> {
+        #[pin]
+        inner: S,
+        #[pin]
+        messages: M,
+        state: State,
+        current: u64,
+        total: Option<u64>,
+        theme_override: Option<Theme<'a>>,
+        spinner_style_override: Option<Style>,
+        annotation_style_override: Option<Style>,
+        rendering: RenderingState<'a>,
+    }
+}
+
+impl<S: Stream> ProgressCountStream<'_, S> {
+    fn new(inner: S) -> Self {
+        // Best-effort total from the stream's size hint. Exact for bounded sources like
+        // `iter(Vec)` or `iter(0..n)`; combinators like `.filter()` lose accuracy but their
+        // upper-bound stays a safe over-estimate. Explicit [`with_len`](Self::with_len) wins.
+        let total = inner.size_hint().1.map(|n| n as u64);
+        Self {
+            inner,
+            messages: stream::pending(),
+            state: State::new(),
+            current: 0,
+            total,
+            theme_override: None,
+            spinner_style_override: None,
+            annotation_style_override: None,
+            rendering: RenderingState::Pending,
+        }
+    }
+}
+
+impl<'a, S, M> ProgressCountStream<'a, S, M> {
+    /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
+    pub fn with_label(mut self, label: impl Display) -> Self {
+        self.state.set_label(label.to_string());
+        self
+    }
+
+    /// Prepend the elapsed time to the line.
+    pub fn with_elapsed_time(mut self) -> Self {
+        self.state.enable_elapsed_time();
+        self
+    }
+
+    /// Record the total number of items expected, overriding any total derived from
+    /// [`Stream::size_hint`]. Enables the bar when the size hint did not.
+    pub fn with_len(mut self, total: u64) -> Self {
+        self.total = Some(total);
+        self
+    }
+
+    /// Render this row with `theme`. Drives standalone rendering when the stream is polled
+    /// directly; overrides the parent [`Group`]'s theme when pushed.
+    pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
+        self.theme_override = Some(theme.into());
+        self
+    }
+
+    /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
+    pub fn with_spinner_style(mut self, style: Style) -> Self {
+        self.spinner_style_override = Some(style);
+        self
+    }
+
+    /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
+    /// default.
+    pub fn with_annotation_style(mut self, style: Style) -> Self {
+        self.annotation_style_override = Some(style);
+        self
+    }
+
+    /// Replace the displayed message each time `messages` yields a value.
+    pub fn with_messages<S2>(self, messages: S2) -> ProgressCountStream<'a, S, S2>
+    where
+        S2: Stream,
+        S2::Item: Display,
+    {
+        ProgressCountStream {
+            inner: self.inner,
+            messages,
+            state: self.state,
+            current: self.current,
+            total: self.total,
+            theme_override: self.theme_override,
+            spinner_style_override: self.spinner_style_override,
+            annotation_style_override: self.annotation_style_override,
+            rendering: self.rendering,
+        }
+    }
+}
+
+impl<'a, S, M> Progressive<'a> for ProgressCountStream<'a, S, M> {
+    fn label(&self) -> Option<&str> {
+        self.state.label()
+    }
+    fn message(&self) -> Option<&str> {
+        self.state.message()
+    }
+    fn progress(&self) -> Option<f64> {
+        self.state.progress()
+    }
+    fn detach_rendering(&mut self) {
+        self.rendering = RenderingState::Detached;
+    }
+    fn theme(&self) -> Option<&Theme<'a>> {
+        self.theme_override.as_ref()
+    }
+    fn spinner_style(&self) -> Option<Style> {
+        self.spinner_style_override
+    }
+    fn annotation_style(&self) -> Option<Style> {
+        self.annotation_style_override
+    }
+    fn show_elapsed_time(&self) -> Option<bool> {
+        if self.state.with_elapsed_time {
+            Some(true)
+        } else {
+            None
+        }
+    }
+}
+
+impl<S, M> Stream for ProgressCountStream<'_, S, M>
+where
+    S: Stream,
+    M: Stream,
+    M::Item: Display,
+{
+    type Item = S::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self.project();
+
+        materialize_rendering(
+            this.rendering,
+            this.theme_override.as_ref(),
+            *this.spinner_style_override,
+            *this.annotation_style_override,
+        );
+
+        if let RenderingState::Active(r) = &mut *this.rendering {
+            if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
+                r.spinner_char = ch;
+            }
+        }
+
+        while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
+            this.state.set_message(msg.to_string());
+        }
+
+        match this.inner.as_mut().poll_next(cx) {
+            Poll::Ready(Some(item)) => {
+                *this.current += 1;
+                if let Some(total) = *this.total {
+                    if total > 0 {
+                        this.state.set_progress(*this.current as f64 / total as f64);
+                    }
+                }
+                if let RenderingState::Active(r) = &mut *this.rendering {
+                    let elapsed = if this.state.with_elapsed_time {
+                        this.state.elapsed()
+                    } else {
+                        Duration::ZERO
+                    };
+                    let frame = FrameContext {
+                        spinner_char: r.spinner_char,
+                        elapsed,
+                        show_elapsed: this.state.with_elapsed_time,
+                        spinner_style: r.spinner_style,
+                        annotation_style: r.annotation_style,
+                    };
+                    r.line.standalone_render(this.state, &frame, r.is_tty);
+                }
+                Poll::Ready(Some(item))
+            }
+            Poll::Ready(None) => {
+                if let RenderingState::Active(r) = &*this.rendering {
+                    Line::standalone_clear(r.is_tty);
+                }
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 fn materialize_rendering<'a>(
     rendering: &mut RenderingState<'a>,
     theme_override: Option<&Theme<'a>>,
@@ -520,4 +741,54 @@ fn materialize_rendering<'a>(
         is_tty,
         _guard: CursorGuard { is_tty },
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_lite::{future, stream, StreamExt as FlStreamExt};
+
+    #[test]
+    fn count_seeds_total_from_size_hint() {
+        future::block_on(async {
+            let s = stream::iter(0..4u32).progressive_count();
+            let mut s = Box::pin(s);
+            assert_eq!(Progressive::progress(&*s), None);
+            for expected in [0.25, 0.5, 0.75, 1.0] {
+                s.next().await.unwrap();
+                assert_eq!(Progressive::progress(&*s), Some(expected));
+            }
+            assert!(s.next().await.is_none());
+        });
+    }
+
+    #[test]
+    fn count_without_size_hint_keeps_progress_absent() {
+        // `stream::pending::<u32>()` has size_hint `(0, None)` and yields nothing.
+        let s: ProgressCountStream<'_, _> = stream::pending::<u32>().progressive_count();
+        assert_eq!(Progressive::progress(&s), None);
+    }
+
+    #[test]
+    fn count_with_len_overrides_size_hint() {
+        future::block_on(async {
+            // size_hint says 4; user knows the real working set is 2.
+            let s = stream::iter(0..4u32).progressive_count().with_len(2);
+            let mut s = Box::pin(s);
+            s.next().await.unwrap();
+            assert_eq!(Progressive::progress(&*s), Some(0.5));
+            s.next().await.unwrap();
+            assert_eq!(Progressive::progress(&*s), Some(1.0));
+        });
+    }
+
+    #[test]
+    fn count_with_zero_len_does_not_set_progress() {
+        future::block_on(async {
+            let s = stream::iter(0..2u32).progressive_count().with_len(0);
+            let mut s = Box::pin(s);
+            while s.next().await.is_some() {}
+            assert_eq!(Progressive::progress(&*s), None);
+        });
+    }
 }

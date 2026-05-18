@@ -14,6 +14,12 @@
   the inactive one, so `fut.progress(Theme::default()).await` renders a visible
   animation out of the box. Use `Theme::new()` for the previous empty-theme
   semantics when building a theme bottom-up.
+- `with_messages` (on `ProgressFuture`, `ProgressStream`, `ProgressBytesStream`,
+  `ProgressCountStream`, `Join` and `FutureExt`) now bounds the stream item by
+  `Into<Cow<'static, str>>` instead of `Display`. `&'static str` and `String`
+  pass through with no allocation (previously every yielded message was
+  `to_string()`'d into a fresh `String`). Callers passing other `Display` types
+  (integers, custom formatters) now need to `format!` at the call site.
 
 ### Changes
 

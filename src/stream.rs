@@ -26,6 +26,7 @@ pub mod group;
 
 pub use group::Group;
 
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::io::IsTerminal;
 use std::pin::Pin;
@@ -132,11 +133,13 @@ impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
         self
     }
 
-    /// Replace the displayed message each time `messages` yields a value.
+    /// Replace the displayed message each time `messages` yields a value. The item type is
+    /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
+    /// zero-copy; other formatted values should be `format!`'d at the call site.
     pub fn with_messages<S2>(self, messages: S2) -> ProgressStream<'a, S, F, S2>
     where
         S2: Stream,
-        S2::Item: Display,
+        S2::Item: Into<Cow<'static, str>>,
     {
         ProgressStream {
             inner: self.inner,
@@ -197,7 +200,7 @@ where
     S: Stream,
     F: FnMut(usize, &S::Item) -> f64,
     M: Stream,
-    M::Item: Display,
+    M::Item: Into<Cow<'static, str>>,
 {
     type Item = S::Item;
 
@@ -218,7 +221,7 @@ where
         }
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
-            this.state.set_message(msg.to_string());
+            this.state.set_message(msg.into());
         }
 
         match this.inner.as_mut().poll_next(cx) {
@@ -401,11 +404,13 @@ impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
         self
     }
 
-    /// Replace the displayed message each time `messages` yields a value.
+    /// Replace the displayed message each time `messages` yields a value. The item type is
+    /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
+    /// zero-copy; other formatted values should be `format!`'d at the call site.
     pub fn with_messages<S2>(self, messages: S2) -> ProgressBytesStream<'a, S, F, S2>
     where
         S2: Stream,
-        S2::Item: Display,
+        S2::Item: Into<Cow<'static, str>>,
     {
         ProgressBytesStream {
             inner: self.inner,
@@ -465,7 +470,7 @@ where
     S: Stream,
     F: FnMut(&S::Item) -> u64,
     M: Stream,
-    M::Item: Display,
+    M::Item: Into<Cow<'static, str>>,
 {
     type Item = S::Item;
 
@@ -486,7 +491,7 @@ where
         }
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
-            this.state.set_message(msg.to_string());
+            this.state.set_message(msg.into());
         }
 
         match this.inner.as_mut().poll_next(cx) {
@@ -604,11 +609,13 @@ impl<'a, S, M> ProgressCountStream<'a, S, M> {
         self
     }
 
-    /// Replace the displayed message each time `messages` yields a value.
+    /// Replace the displayed message each time `messages` yields a value. The item type is
+    /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
+    /// zero-copy; other formatted values should be `format!`'d at the call site.
     pub fn with_messages<S2>(self, messages: S2) -> ProgressCountStream<'a, S, S2>
     where
         S2: Stream,
-        S2::Item: Display,
+        S2::Item: Into<Cow<'static, str>>,
     {
         ProgressCountStream {
             inner: self.inner,
@@ -659,7 +666,7 @@ impl<S, M> Stream for ProgressCountStream<'_, S, M>
 where
     S: Stream,
     M: Stream,
-    M::Item: Display,
+    M::Item: Into<Cow<'static, str>>,
 {
     type Item = S::Item;
 
@@ -680,7 +687,7 @@ where
         }
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
-            this.state.set_message(msg.to_string());
+            this.state.set_message(msg.into());
         }
 
         match this.inner.as_mut().poll_next(cx) {

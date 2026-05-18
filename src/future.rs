@@ -15,6 +15,7 @@ pub mod join;
 pub use group::Group;
 pub use join::{join, Join};
 
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::future::Future;
 use std::io::IsTerminal;
@@ -105,11 +106,13 @@ impl<'a, F, M, P> ProgressFuture<'a, F, M, P> {
     }
 
     /// Replace the displayed message each time `messages` yields a value. When the stream is
-    /// exhausted the last value remains visible.
+    /// exhausted the last value remains visible. The item type is anything that converts into a
+    /// `Cow<'static, str>`: `&'static str` and `String` are zero-copy; other formatted values
+    /// should be `format!`'d at the call site.
     pub fn with_messages<S>(self, messages: S) -> ProgressFuture<'a, F, S, P>
     where
         S: Stream,
-        S::Item: Display,
+        S::Item: Into<Cow<'static, str>>,
     {
         ProgressFuture {
             inner: self.inner,
@@ -213,7 +216,7 @@ impl<F, M, P> Future for ProgressFuture<'_, F, M, P>
 where
     F: Future,
     M: Stream,
-    M::Item: Display,
+    M::Item: Into<Cow<'static, str>>,
     P: Stream<Item = f64>,
 {
     type Output = F::Output;
@@ -249,7 +252,7 @@ where
         }
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
-            this.state.set_message(msg.to_string());
+            this.state.set_message(msg.into());
             dirty = true;
         }
 
@@ -345,7 +348,7 @@ pub trait FutureExt: Future {
     where
         Self: Sized,
         S: Stream,
-        S::Item: Display,
+        S::Item: Into<Cow<'static, str>>,
     {
         self.progressive().with_messages(messages)
     }

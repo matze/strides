@@ -5,6 +5,7 @@
 //! spinner ticking live elsewhere ([`Line`](crate::line::Line) and the wrapper itself); `State`
 //! only stores and updates the numbers.
 
+use std::borrow::Cow;
 use std::time::{Duration, Instant};
 
 use crate::progressive::Progressive;
@@ -20,7 +21,7 @@ const RATE_ALPHA: f64 = 0.3;
 
 pub(crate) struct State {
     pub(crate) label: Option<String>,
-    pub(crate) message: Option<String>,
+    pub(crate) message: Option<Cow<'static, str>>,
     pub(crate) progress: Option<f64>,
     pub(crate) bytes_done: u64,
     pub(crate) bytes_total: Option<u64>,
@@ -51,7 +52,7 @@ impl State {
         self.label = Some(label);
     }
 
-    pub(crate) fn set_message(&mut self, message: String) {
+    pub(crate) fn set_message(&mut self, message: Cow<'static, str>) {
         self.message = Some(message);
     }
 

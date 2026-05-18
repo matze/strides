@@ -5,6 +5,7 @@
 //! resolves. Push one into a [`Group`](super::Group) to render many futures as one line alongside
 //! other independent rows, or call [`with_theme`](Join::with_theme) for a self-contained row.
 
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::future::Future;
 use std::io::IsTerminal;
@@ -117,11 +118,13 @@ impl<'a, F: Future, M> Join<'a, F, M> {
         self
     }
 
-    /// Replace the displayed message each time `messages` yields a value.
+    /// Replace the displayed message each time `messages` yields a value. The item type is
+    /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
+    /// zero-copy; other formatted values should be `format!`'d at the call site.
     pub fn with_messages<S>(self, messages: S) -> Join<'a, F, S>
     where
         S: Stream,
-        S::Item: Display,
+        S::Item: Into<Cow<'static, str>>,
     {
         Join {
             futs: self.futs,
@@ -184,7 +187,7 @@ impl<F, M> Future for Join<'_, F, M>
 where
     F: Future,
     M: Stream,
-    M::Item: Display,
+    M::Item: Into<Cow<'static, str>>,
 {
     type Output = Vec<F::Output>;
 
@@ -223,7 +226,7 @@ where
         }
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
-            this.state.set_message(msg.to_string());
+            this.state.set_message(msg.into());
             dirty = true;
         }
 

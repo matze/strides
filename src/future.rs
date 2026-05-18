@@ -25,6 +25,7 @@ use std::time::Duration;
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 use owo_colors::Style;
+use pin_project_lite::pin_project;
 
 use crate::line::{FrameContext, Line};
 use crate::progressive::Progressive;
@@ -55,22 +56,27 @@ pub(super) enum RenderingState<'a> {
     Detached,
 }
 
-/// A [`Future`] wrapped with progress state.
-///
-/// `ProgressFuture` carries the wrapped future together with state read out via [`Progressive`]
-/// and (lazily) the rendering machinery for standalone use. The `M` and `P` parameters track the
-/// optional message and progress stream types and default to [`Pending`] (a ZST that never
-/// yields) so the bare `fut.progress(theme).await` path allocates nothing beyond the spinner
-/// [`Ticks`] state.
-pub struct ProgressFuture<'a, F, M = Pending<&'static str>, P = Pending<f64>> {
-    inner: F,
-    messages: M,
-    progress: P,
-    state: State,
-    theme_override: Option<Theme<'a>>,
-    spinner_style_override: Option<Style>,
-    annotation_style_override: Option<Style>,
-    rendering: RenderingState<'a>,
+pin_project! {
+    /// A [`Future`] wrapped with progress state.
+    ///
+    /// `ProgressFuture` carries the wrapped future together with state read out via [`Progressive`]
+    /// and (lazily) the rendering machinery for standalone use. The `M` and `P` parameters track the
+    /// optional message and progress stream types and default to [`Pending`] (a ZST that never
+    /// yields) so the bare `fut.progress(theme).await` path allocates nothing beyond the spinner
+    /// [`Ticks`] state.
+    pub struct ProgressFuture<'a, F, M = Pending<&'static str>, P = Pending<f64>> {
+        #[pin]
+        inner: F,
+        #[pin]
+        messages: M,
+        #[pin]
+        progress: P,
+        state: State,
+        theme_override: Option<Theme<'a>>,
+        spinner_style_override: Option<Style>,
+        annotation_style_override: Option<Style>,
+        rendering: RenderingState<'a>,
+    }
 }
 
 impl<F> ProgressFuture<'_, F> {
@@ -102,7 +108,7 @@ impl<'a, F, M, P> ProgressFuture<'a, F, M, P> {
     /// exhausted the last value remains visible.
     pub fn with_messages<S>(self, messages: S) -> ProgressFuture<'a, F, S, P>
     where
-        S: Stream + Unpin,
+        S: Stream,
         S::Item: Display,
     {
         ProgressFuture {
@@ -126,7 +132,7 @@ impl<'a, F, M, P> ProgressFuture<'a, F, M, P> {
     /// Drive the progress bar from a stream of fractions in `0.0..=1.0`. The latest value wins.
     pub fn with_progress<S>(self, progress: S) -> ProgressFuture<'a, F, M, S>
     where
-        S: Stream<Item = f64> + Unpin,
+        S: Stream<Item = f64>,
     {
         ProgressFuture {
             inner: self.inner,
@@ -205,15 +211,15 @@ impl<'a, F, M, P> Progressive<'a> for ProgressFuture<'a, F, M, P> {
 
 impl<F, M, P> Future for ProgressFuture<'_, F, M, P>
 where
-    F: Future + Unpin,
-    M: Stream + Unpin,
+    F: Future,
+    M: Stream,
     M::Item: Display,
-    P: Stream<Item = f64> + Unpin,
+    P: Stream<Item = f64>,
 {
     type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         if matches!(this.rendering, RenderingState::Pending) {
             let theme = this.theme_override.clone().unwrap_or_default();
@@ -222,7 +228,7 @@ where
             let line = Line::new(&theme);
             // Preserve the legacy behaviour where the bar appears at 0% even with no progress stream.
             this.state.set_progress(0.0);
-            this.rendering = RenderingState::Active(Rendering {
+            *this.rendering = RenderingState::Active(Rendering {
                 line,
                 ticks,
                 spinner_char: None,
@@ -242,17 +248,17 @@ where
             }
         }
 
-        while let Poll::Ready(Some(msg)) = Pin::new(&mut this.messages).poll_next(cx) {
+        while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
             this.state.set_message(msg.to_string());
             dirty = true;
         }
 
-        while let Poll::Ready(Some(p)) = Pin::new(&mut this.progress).poll_next(cx) {
+        while let Poll::Ready(Some(p)) = this.progress.as_mut().poll_next(cx) {
             this.state.set_progress(p.clamp(0.0, 1.0));
             dirty = true;
         }
 
-        let item = Pin::new(&mut this.inner).poll(cx);
+        let item = this.inner.as_mut().poll(cx);
 
         if let RenderingState::Active(r) = &mut this.rendering {
             match item {
@@ -269,7 +275,7 @@ where
                         spinner_style: r.spinner_style,
                         annotation_style: r.annotation_style,
                     };
-                    r.line.standalone_render(&this.state, &frame, r.is_tty);
+                    r.line.standalone_render(this.state, &frame, r.is_tty);
                 }
                 Poll::Ready(_) => Line::standalone_clear(r.is_tty),
                 _ => {}
@@ -338,7 +344,7 @@ pub trait FutureExt: Future {
     fn with_messages<'a, S>(self, messages: S) -> ProgressFuture<'a, Self, S>
     where
         Self: Sized,
-        S: Stream + Unpin,
+        S: Stream,
         S::Item: Display,
     {
         self.progressive().with_messages(messages)
@@ -349,7 +355,7 @@ pub trait FutureExt: Future {
     fn with_progress<'a, S>(self, progress: S) -> ProgressFuture<'a, Self, Pending<&'static str>, S>
     where
         Self: Sized,
-        S: Stream<Item = f64> + Unpin,
+        S: Stream<Item = f64>,
     {
         self.progressive().with_progress(progress)
     }

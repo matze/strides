@@ -1105,6 +1105,7 @@ dependencies = [
  "futures-timer",
  "futures-util",
  "owo-colors",
+ "pin-project-lite",
  "reqwest",
  "terminal_size",
  "tokio",

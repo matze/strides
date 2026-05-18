@@ -32,6 +32,7 @@ use std::time::Duration;
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 use owo_colors::Style;
+use pin_project_lite::pin_project;
 
 use crate::line::{FrameContext, Line};
 use crate::progressive::Progressive;
@@ -62,17 +63,21 @@ enum RenderingState<'a> {
     Detached,
 }
 
-/// A [`Stream`] wrapped to track progress derived from a fraction closure.
-pub struct ProgressStream<'a, S, F, M = Pending<&'static str>> {
-    inner: S,
-    fraction_fn: F,
-    messages: M,
-    state: State,
-    current: usize,
-    theme_override: Option<Theme<'a>>,
-    spinner_style_override: Option<Style>,
-    annotation_style_override: Option<Style>,
-    rendering: RenderingState<'a>,
+pin_project! {
+    /// A [`Stream`] wrapped to track progress derived from a fraction closure.
+    pub struct ProgressStream<'a, S, F, M = Pending<&'static str>> {
+        #[pin]
+        inner: S,
+        fraction_fn: F,
+        #[pin]
+        messages: M,
+        state: State,
+        current: usize,
+        theme_override: Option<Theme<'a>>,
+        spinner_style_override: Option<Style>,
+        annotation_style_override: Option<Style>,
+        rendering: RenderingState<'a>,
+    }
 }
 
 impl<S, F> ProgressStream<'_, S, F> {
@@ -127,7 +132,7 @@ impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
     /// Replace the displayed message each time `messages` yields a value.
     pub fn with_messages<S2>(self, messages: S2) -> ProgressStream<'a, S, F, S2>
     where
-        S2: Stream + Unpin,
+        S2: Stream,
         S2::Item: Display,
     {
         ProgressStream {
@@ -186,39 +191,39 @@ impl<'a, S, F, M> Progressive<'a> for ProgressStream<'a, S, F, M> {
 
 impl<S, F, M> Stream for ProgressStream<'_, S, F, M>
 where
-    S: Stream + Unpin,
-    F: FnMut(usize, &S::Item) -> f64 + Unpin,
-    M: Stream + Unpin,
+    S: Stream,
+    F: FnMut(usize, &S::Item) -> f64,
+    M: Stream,
     M::Item: Display,
 {
     type Item = S::Item;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         materialize_rendering(
-            &mut this.rendering,
+            this.rendering,
             this.theme_override.as_ref(),
-            this.spinner_style_override,
-            this.annotation_style_override,
+            *this.spinner_style_override,
+            *this.annotation_style_override,
         );
 
-        if let RenderingState::Active(r) = &mut this.rendering {
+        if let RenderingState::Active(r) = &mut *this.rendering {
             if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
                 r.spinner_char = ch;
             }
         }
 
-        while let Poll::Ready(Some(msg)) = Pin::new(&mut this.messages).poll_next(cx) {
+        while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
             this.state.set_message(msg.to_string());
         }
 
-        match Pin::new(&mut this.inner).poll_next(cx) {
+        match this.inner.as_mut().poll_next(cx) {
             Poll::Ready(Some(item)) => {
-                this.current += 1;
-                let completed = (this.fraction_fn)(this.current, &item);
+                *this.current += 1;
+                let completed = (this.fraction_fn)(*this.current, &item);
                 this.state.set_progress(completed);
-                if let RenderingState::Active(r) = &mut this.rendering {
+                if let RenderingState::Active(r) = &mut *this.rendering {
                     let elapsed = if this.state.with_elapsed_time {
                         this.state.elapsed()
                     } else {
@@ -231,12 +236,12 @@ where
                         spinner_style: r.spinner_style,
                         annotation_style: r.annotation_style,
                     };
-                    r.line.standalone_render(&this.state, &frame, r.is_tty);
+                    r.line.standalone_render(this.state, &frame, r.is_tty);
                 }
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                if let RenderingState::Active(r) = &this.rendering {
+                if let RenderingState::Active(r) = &*this.rendering {
                     Line::standalone_clear(r.is_tty);
                 }
                 Poll::Ready(None)
@@ -259,7 +264,7 @@ pub trait StreamExt: Stream {
     ) -> ProgressStream<'a, Self, F>
     where
         Self: Sized,
-        F: FnMut(usize, &Self::Item) -> f64 + Unpin,
+        F: FnMut(usize, &Self::Item) -> f64,
     {
         self.progressive(fraction_fn).with_theme(theme)
     }
@@ -270,7 +275,7 @@ pub trait StreamExt: Stream {
     fn progressive<'a, F>(self, fraction_fn: F) -> ProgressStream<'a, Self, F>
     where
         Self: Sized,
-        F: FnMut(usize, &Self::Item) -> f64 + Unpin,
+        F: FnMut(usize, &Self::Item) -> f64,
     {
         ProgressStream::new(self, fraction_fn)
     }
@@ -285,7 +290,7 @@ pub trait StreamExt: Stream {
     ) -> ProgressBytesStream<'a, Self, F>
     where
         Self: Sized,
-        F: FnMut(&Self::Item) -> u64 + Unpin,
+        F: FnMut(&Self::Item) -> u64,
     {
         self.progressive_bytes(bytes_fn).with_theme(theme)
     }
@@ -295,7 +300,7 @@ pub trait StreamExt: Stream {
     fn progressive_bytes<'a, F>(self, bytes_fn: F) -> ProgressBytesStream<'a, Self, F>
     where
         Self: Sized,
-        F: FnMut(&Self::Item) -> u64 + Unpin,
+        F: FnMut(&Self::Item) -> u64,
     {
         ProgressBytesStream::new(self, bytes_fn)
     }
@@ -303,16 +308,20 @@ pub trait StreamExt: Stream {
 
 impl<S> StreamExt for S where S: Stream {}
 
-/// A [`Stream`] wrapped to track cumulative bytes, smoothed rate and (optionally) total.
-pub struct ProgressBytesStream<'a, S, F, M = Pending<&'static str>> {
-    inner: S,
-    bytes_fn: F,
-    messages: M,
-    state: State,
-    theme_override: Option<Theme<'a>>,
-    spinner_style_override: Option<Style>,
-    annotation_style_override: Option<Style>,
-    rendering: RenderingState<'a>,
+pin_project! {
+    /// A [`Stream`] wrapped to track cumulative bytes, smoothed rate and (optionally) total.
+    pub struct ProgressBytesStream<'a, S, F, M = Pending<&'static str>> {
+        #[pin]
+        inner: S,
+        bytes_fn: F,
+        #[pin]
+        messages: M,
+        state: State,
+        theme_override: Option<Theme<'a>>,
+        spinner_style_override: Option<Style>,
+        annotation_style_override: Option<Style>,
+        rendering: RenderingState<'a>,
+    }
 }
 
 impl<S, F> ProgressBytesStream<'_, S, F> {
@@ -372,7 +381,7 @@ impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
     /// Replace the displayed message each time `messages` yields a value.
     pub fn with_messages<S2>(self, messages: S2) -> ProgressBytesStream<'a, S, F, S2>
     where
-        S2: Stream + Unpin,
+        S2: Stream,
         S2::Item: Display,
     {
         ProgressBytesStream {
@@ -430,38 +439,38 @@ impl<'a, S, F, M> Progressive<'a> for ProgressBytesStream<'a, S, F, M> {
 
 impl<S, F, M> Stream for ProgressBytesStream<'_, S, F, M>
 where
-    S: Stream + Unpin,
-    F: FnMut(&S::Item) -> u64 + Unpin,
-    M: Stream + Unpin,
+    S: Stream,
+    F: FnMut(&S::Item) -> u64,
+    M: Stream,
     M::Item: Display,
 {
     type Item = S::Item;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         materialize_rendering(
-            &mut this.rendering,
+            this.rendering,
             this.theme_override.as_ref(),
-            this.spinner_style_override,
-            this.annotation_style_override,
+            *this.spinner_style_override,
+            *this.annotation_style_override,
         );
 
-        if let RenderingState::Active(r) = &mut this.rendering {
+        if let RenderingState::Active(r) = &mut *this.rendering {
             if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
                 r.spinner_char = ch;
             }
         }
 
-        while let Poll::Ready(Some(msg)) = Pin::new(&mut this.messages).poll_next(cx) {
+        while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
             this.state.set_message(msg.to_string());
         }
 
-        match Pin::new(&mut this.inner).poll_next(cx) {
+        match this.inner.as_mut().poll_next(cx) {
             Poll::Ready(Some(item)) => {
                 let delta = (this.bytes_fn)(&item);
                 this.state.add_bytes(delta);
-                if let RenderingState::Active(r) = &mut this.rendering {
+                if let RenderingState::Active(r) = &mut *this.rendering {
                     let elapsed = if this.state.with_elapsed_time {
                         this.state.elapsed()
                     } else {
@@ -474,12 +483,12 @@ where
                         spinner_style: r.spinner_style,
                         annotation_style: r.annotation_style,
                     };
-                    r.line.standalone_render(&this.state, &frame, r.is_tty);
+                    r.line.standalone_render(this.state, &frame, r.is_tty);
                 }
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                if let RenderingState::Active(r) = &this.rendering {
+                if let RenderingState::Active(r) = &*this.rendering {
                     Line::standalone_clear(r.is_tty);
                 }
                 Poll::Ready(None)

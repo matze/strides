@@ -28,10 +28,10 @@ fn main() {
     future::block_on(async {
         let work = async {
             // Await a long-running future with dynamic status messages.
-            std::pin::pin!(async {
+            async {
                 async_io::Timer::after(Duration::from_secs(5)).await;
                 42
-            })
+            }
             .progress(spinner::styles::SAND)
             .with_messages(messages)
             .await;

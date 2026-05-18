@@ -52,7 +52,7 @@ async fn per_line_progress() {
                 Timer::after(Duration::from_millis(50)).await;
             }
         };
-        group.push(Box::pin(work).with_label(label).with_progress(rx));
+        group.push(work.with_label(label).with_progress(rx));
     }
 
     group.for_each(|_| {}).await;

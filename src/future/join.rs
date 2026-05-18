@@ -15,6 +15,7 @@ use std::time::Duration;
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 use owo_colors::Style;
+use pin_project_lite::pin_project;
 
 use super::{Rendering, RenderingState};
 use crate::line::{FrameContext, Line};
@@ -23,22 +24,25 @@ use crate::state::State;
 use crate::term::CursorGuard;
 use crate::Theme;
 
-/// N concurrent futures collapsed into a single [`Progressive`] row.
-///
-/// The bar fills from 0/N to N/N as each inner future completes. Results are collected in
-/// completion order. With zero inputs, awaiting resolves immediately with an empty `Vec` and no
-/// progress is reported.
-pub struct Join<'a, F: Future, M = Pending<&'static str>> {
-    futs: Vec<Pin<Box<F>>>,
-    results: Vec<F::Output>,
-    completed: usize,
-    total: usize,
-    messages: M,
-    state: State,
-    theme_override: Option<Theme<'a>>,
-    spinner_style_override: Option<Style>,
-    annotation_style_override: Option<Style>,
-    rendering: RenderingState<'a>,
+pin_project! {
+    /// N concurrent futures collapsed into a single [`Progressive`] row.
+    ///
+    /// The bar fills from 0/N to N/N as each inner future completes. Results are collected in
+    /// completion order. With zero inputs, awaiting resolves immediately with an empty `Vec` and no
+    /// progress is reported.
+    pub struct Join<'a, F: Future, M = Pending<&'static str>> {
+        futs: Vec<Pin<Box<F>>>,
+        results: Vec<F::Output>,
+        completed: usize,
+        total: usize,
+        #[pin]
+        messages: M,
+        state: State,
+        theme_override: Option<Theme<'a>>,
+        spinner_style_override: Option<Style>,
+        annotation_style_override: Option<Style>,
+        rendering: RenderingState<'a>,
+    }
 }
 
 /// Construct a [`Join`] from an iterable of futures sharing an `Output` type.
@@ -116,7 +120,7 @@ impl<'a, F: Future, M> Join<'a, F, M> {
     /// Replace the displayed message each time `messages` yields a value.
     pub fn with_messages<S>(self, messages: S) -> Join<'a, F, S>
     where
-        S: Stream + Unpin,
+        S: Stream,
         S::Item: Display,
     {
         Join {
@@ -179,14 +183,13 @@ impl<'a, F: Future, M> Progressive<'a> for Join<'a, F, M> {
 impl<F, M> Future for Join<'_, F, M>
 where
     F: Future,
-    F::Output: Unpin,
-    M: Stream + Unpin,
+    M: Stream,
     M::Item: Display,
 {
     type Output = Vec<F::Output>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         if matches!(this.rendering, RenderingState::Pending) {
             let theme = this.theme_override.clone().unwrap_or_default();
@@ -195,11 +198,11 @@ where
             let line = Line::new(&theme);
             // `standalone_render` reads progress from `State`, but `Join`'s `progress()` is
             // derived from `completed / total`. Mirror it into state so the bar renders.
-            if this.total > 0 {
+            if *this.total > 0 {
                 this.state
-                    .set_progress(this.completed as f64 / this.total as f64);
+                    .set_progress(*this.completed as f64 / *this.total as f64);
             }
-            this.rendering = RenderingState::Active(Rendering {
+            *this.rendering = RenderingState::Active(Rendering {
                 line,
                 ticks,
                 spinner_char: None,
@@ -212,14 +215,14 @@ where
 
         let mut dirty = false;
 
-        if let RenderingState::Active(r) = &mut this.rendering {
+        if let RenderingState::Active(r) = &mut *this.rendering {
             if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
                 r.spinner_char = ch;
                 dirty = true;
             }
         }
 
-        while let Poll::Ready(Some(msg)) = Pin::new(&mut this.messages).poll_next(cx) {
+        while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
             this.state.set_message(msg.to_string());
             dirty = true;
         }
@@ -230,10 +233,10 @@ where
                 Poll::Ready(out) => {
                     this.results.push(out);
                     drop(this.futs.swap_remove(i));
-                    this.completed += 1;
-                    if this.total > 0 {
+                    *this.completed += 1;
+                    if *this.total > 0 {
                         this.state
-                            .set_progress(this.completed as f64 / this.total as f64);
+                            .set_progress(*this.completed as f64 / *this.total as f64);
                     }
                     dirty = true;
                 }
@@ -241,7 +244,7 @@ where
             }
         }
 
-        if let RenderingState::Active(r) = &mut this.rendering {
+        if let RenderingState::Active(r) = &mut *this.rendering {
             if !this.futs.is_empty() && dirty {
                 let elapsed = if this.state.with_elapsed_time {
                     this.state.elapsed()
@@ -255,15 +258,15 @@ where
                     spinner_style: r.spinner_style,
                     annotation_style: r.annotation_style,
                 };
-                r.line.standalone_render(&this.state, &frame, r.is_tty);
+                r.line.standalone_render(this.state, &frame, r.is_tty);
             }
         }
 
         if this.futs.is_empty() {
-            if let RenderingState::Active(r) = &this.rendering {
+            if let RenderingState::Active(r) = &*this.rendering {
                 Line::standalone_clear(r.is_tty);
             }
-            Poll::Ready(std::mem::take(&mut this.results))
+            Poll::Ready(std::mem::take(this.results))
         } else {
             Poll::Pending
         }

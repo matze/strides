@@ -12,11 +12,12 @@
 //! ```rust
 //! use strides::layout::{Layout, Segment};
 //!
-//! let layout = Layout::new(&[])
-//!     .with_segment(Segment::spinner())
-//!     .with_segment(Segment::elapsed().with_border("[", "]"))
-//!     .with_segment(Segment::bar())
-//!     .with_segment(Segment::message());
+//! let layout = Layout::from_segments([
+//!     Segment::spinner(),
+//!     Segment::elapsed().with_border("[", "]"),
+//!     Segment::bar(),
+//!     Segment::message(),
+//! ]);
 //! ```
 
 use std::borrow::Cow;
@@ -407,11 +408,27 @@ impl Layout {
     /// space.
     pub const DEFAULT: Layout = Layout::new(&DEFAULT_SEGMENTS);
 
-    /// Create a layout from a static slice of segments, joined by a single space. Pass `&[]` to
-    /// start empty and build up with [`with_segment`](Self::with_segment).
+    /// Create a layout from a static slice of segments, joined by a single space. This is the
+    /// only allocation-free constructor besides [`Layout::DEFAULT`]; pass a `const` slice to keep
+    /// the layout backed by borrowed storage. Pass `&[]` to start empty and build up with
+    /// [`with_segment`](Self::with_segment), but note that the first `with_segment` call switches
+    /// the layout to an owned `Vec`.
     pub const fn new(segments: &'static [Segment]) -> Self {
         Self {
             segments: Cow::Borrowed(segments),
+            separator: Cow::Borrowed(" "),
+        }
+    }
+
+    /// Create a layout from any iterable of segments, collecting into a single owned `Vec`.
+    /// Prefer this over `Layout::new(&[]).with_segment(a).with_segment(b)...` when the segments
+    /// are listed inline: one allocation instead of one per `with_segment` call.
+    pub fn from_segments<I>(segments: I) -> Self
+    where
+        I: IntoIterator<Item = Segment>,
+    {
+        Self {
+            segments: Cow::Owned(segments.into_iter().collect()),
             separator: Cow::Borrowed(" "),
         }
     }

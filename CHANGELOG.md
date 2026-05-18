@@ -26,6 +26,10 @@
 - Add `Theme::with(spinner, bar)` for the common case of naming both pieces in
   one call: `Theme::with(DOTS_3, SHADED)` instead of
   `Theme::new().with_spinner(DOTS_3).with_bar(SHADED)`.
+- Add `Layout::from_segments(impl IntoIterator<Item = Segment>)` for bulk
+  construction in a single allocation instead of chaining `with_segment` per
+  segment. `Layout::new(&'static [Segment])` remains the only allocation-free
+  constructor besides `Layout::DEFAULT`.
 
 
 ## 1.0.0-rc.2

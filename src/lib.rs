@@ -86,13 +86,12 @@
 //! ```rust
 //! use strides::layout::{Layout, Segment};
 //!
-//! let theme = strides::Theme::new().with_layout(
-//!     Layout::new(&[])
-//!         .with_segment(Segment::spinner())
-//!         .with_segment(Segment::elapsed().with_border("[", "]"))
-//!         .with_segment(Segment::bar())
-//!         .with_segment(Segment::message()),
-//! );
+//! let theme = strides::Theme::new().with_layout(Layout::from_segments([
+//!     Segment::spinner(),
+//!     Segment::elapsed().with_border("[", "]"),
+//!     Segment::bar(),
+//!     Segment::message(),
+//! ]));
 //! ```
 //!
 //! ## Futures

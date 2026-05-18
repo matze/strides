@@ -29,14 +29,15 @@ async fn main() -> anyhow::Result<()> {
     let response = reqwest::get(args.url).await?;
     let length = response.content_length().unwrap_or_default();
 
-    let layout = Layout::new(&[])
-        .with_segment(Segment::spinner())
-        .with_segment(Segment::bar())
-        .with_segment(Segment::bytes())
-        .with_segment(Segment::literal("@"))
-        .with_segment(Segment::rate())
-        .with_segment(Segment::literal("·"))
-        .with_segment(Segment::eta());
+    let layout = Layout::from_segments([
+        Segment::spinner(),
+        Segment::bar(),
+        Segment::bytes(),
+        Segment::literal("@"),
+        Segment::rate(),
+        Segment::literal("·"),
+        Segment::eta(),
+    ]);
 
     let theme = Theme::default()
         .with_bar(bar::styles::SHADED)

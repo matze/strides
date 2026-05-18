@@ -19,17 +19,16 @@ fn percent(ctx: &RenderContext, buf: &mut String) {
 
 fn main() {
     futures_lite::future::block_on(async {
-        let layout = Layout::new(&[])
-            .with_segment(
-                Segment::elapsed()
-                    .with_border("[", "]")
-                    .with_style(Style::new().green().dimmed()),
-            )
-            .with_segment(Segment::spinner())
-            .with_segment(Segment::custom(percent))
-            .with_segment(Segment::bar())
-            .with_segment(Segment::message())
-            .with_separator(" · ");
+        let layout = Layout::from_segments([
+            Segment::elapsed()
+                .with_border("[", "]")
+                .with_style(Style::new().green().dimmed()),
+            Segment::spinner(),
+            Segment::custom(percent),
+            Segment::bar(),
+            Segment::message(),
+        ])
+        .with_separator(" · ");
 
         let theme = Theme::default()
             .with_bar(bar::styles::THIN_LINE)

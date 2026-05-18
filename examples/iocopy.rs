@@ -18,12 +18,13 @@ use tokio_util::io::{ReaderStream, StreamReader};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let layout = Layout::new(&[])
-        .with_segment(Segment::spinner())
-        .with_segment(Segment::elapsed().with_border("[", "]"))
-        .with_segment(Segment::bytes())
-        .with_segment(Segment::literal("@"))
-        .with_segment(Segment::rate());
+    let layout = Layout::from_segments([
+        Segment::spinner(),
+        Segment::elapsed().with_border("[", "]"),
+        Segment::bytes(),
+        Segment::literal("@"),
+        Segment::rate(),
+    ]);
 
     let theme = Theme::default().with_layout(layout);
 

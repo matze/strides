@@ -9,7 +9,7 @@ use futures_lite::StreamExt as _;
 use owo_colors::Style;
 use strides::layout::{Layout, Segment};
 use strides::stream::StreamExt as _;
-use strides::{bar, spinner, RenderContext, Theme};
+use strides::{bar, RenderContext, Theme};
 
 fn percent(ctx: &RenderContext, buf: &mut String) {
     if let Some(progress) = ctx.progress {
@@ -32,7 +32,6 @@ fn main() {
             .with_separator(" · ");
 
         let theme = Theme::default()
-            .with_spinner(spinner::styles::DOTS_3)
             .with_bar(bar::styles::THIN_LINE)
             .with_layout(layout);
 

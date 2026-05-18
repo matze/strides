@@ -17,7 +17,7 @@
 
 use crate::bar::Bar;
 use crate::layout::Layout;
-use crate::spinner::Spinner;
+use crate::spinner::{styles, Spinner};
 
 /// Combined theme for progress display, bundling a [`Spinner`] and a [`Bar`].
 #[derive(Clone)]
@@ -33,14 +33,18 @@ pub struct Theme<'a> {
 }
 
 impl Default for Theme<'_> {
+    /// A theme that animates out of the box: [`styles::DOTS_3`](crate::spinner::styles::DOTS_3)
+    /// spinner, no bar, default [`Layout`]. For a fully empty theme to build on, use
+    /// [`Theme::new`].
     fn default() -> Self {
-        Self::new()
+        Self::new().with_spinner(styles::DOTS_3)
     }
 }
 
 impl<'a> Theme<'a> {
-    /// Create a new theme with an inactive spinner, no bar, an auto-detected bar
-    /// width and the default [`Layout`].
+    /// Create an empty theme: inactive spinner, no bar, auto-detected bar width, default
+    /// [`Layout`]. Most callers want [`Theme::default`] instead, which seeds a visible spinner;
+    /// use `new` when building a theme bottom-up and explicitly setting every piece.
     pub const fn new() -> Self {
         Self {
             spinner: Spinner::inactive(),
@@ -86,6 +90,6 @@ impl<'a> Theme<'a> {
 
 impl<'a> From<Spinner<'a>> for Theme<'a> {
     fn from(spinner: Spinner<'a>) -> Self {
-        Theme::default().with_spinner(spinner)
+        Theme::new().with_spinner(spinner)
     }
 }

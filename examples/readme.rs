@@ -26,9 +26,7 @@ async fn animate_two_futures_concurrently() {
 async fn animate_stream() {
     use strides::stream::StreamExt as _;
 
-    let theme = strides::Theme::default()
-        .with_spinner(DOTS_3)
-        .with_bar(strides::bar::styles::THIN_LINE);
+    let theme = strides::Theme::default().with_bar(strides::bar::styles::THIN_LINE);
 
     futures_lite::stream::iter(0..100)
         .progress(theme, |_, item| *item as f64 / 100.0)

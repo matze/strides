@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use strides::layout::{Layout, Segment};
 use strides::stream::StreamExt as _;
-use strides::{spinner, Theme};
+use strides::Theme;
 use tokio::io;
 use tokio_util::io::{ReaderStream, StreamReader};
 
@@ -25,9 +25,7 @@ async fn main() -> io::Result<()> {
         .with_segment(Segment::literal("@"))
         .with_segment(Segment::rate());
 
-    let theme = Theme::default()
-        .with_spinner(spinner::styles::DOTS_3)
-        .with_layout(layout);
+    let theme = Theme::default().with_layout(layout);
 
     let source = tokio::fs::File::open("/dev/urandom").await?;
     let mut sink = tokio::fs::File::create("/dev/null").await?;

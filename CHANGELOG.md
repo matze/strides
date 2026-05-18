@@ -10,6 +10,10 @@
   and a `|i, _| i as f64 / N as f64` closure reached `1.0` on item `N`. Update
   such closures to `(i + 1) as f64 / N as f64` to keep the old shape, or
   migrate to `StreamExt::progress_count` (see below).
+- `Theme::default()` now ships the `spinner::styles::DOTS_3` spinner instead of
+  the inactive one, so `fut.progress(Theme::default()).await` renders a visible
+  animation out of the box. Use `Theme::new()` for the previous empty-theme
+  semantics when building a theme bottom-up.
 
 ### Changes
 

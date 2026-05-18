@@ -16,17 +16,14 @@ use futures::SinkExt;
 use futures_concurrency::future::Race as _;
 use futures_lite::{future, StreamExt};
 use strides::future::{join, FutureExt, Group};
-use strides::{bar, spinner, term, Theme};
+use strides::{bar, term, Theme};
 
 fn theme() -> Theme<'static> {
     let bar = bar::styles::THIN_LINE
         .with_filled_style(owo_colors::Style::new().bright_purple())
         .with_empty_style(owo_colors::Style::new().bright_black());
 
-    Theme::default()
-        .with_spinner(spinner::styles::DOTS_3)
-        .with_bar(bar)
-        .with_bar_width(20)
+    Theme::default().with_bar(bar).with_bar_width(20)
 }
 
 async fn one_line_per_future() {

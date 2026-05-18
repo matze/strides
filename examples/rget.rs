@@ -5,7 +5,7 @@ use futures::{StreamExt as _, TryStreamExt};
 use futures_concurrency::future::Race as _;
 use strides::layout::{Layout, Segment};
 use strides::stream::StreamExt as _;
-use strides::{bar, spinner, term, Theme};
+use strides::{bar, term, Theme};
 use tokio_util::codec::{BytesCodec, FramedWrite};
 
 #[derive(Parser, Debug)]
@@ -40,7 +40,6 @@ async fn main() -> anyhow::Result<()> {
 
     let theme = Theme::default()
         .with_bar(bar::styles::SHADED)
-        .with_spinner(spinner::styles::DOTS_3)
         .with_layout(layout);
 
     let stream = response

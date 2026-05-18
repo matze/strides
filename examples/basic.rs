@@ -25,9 +25,7 @@ fn main() {
 
     // Set up our theme with parallelogram bar and sand spinner. The stream gives no size
     // hint, thus we need to set the number of expected items manually.
-    let theme = Theme::default()
-        .with_bar(bar::styles::PARALLELOGRAM)
-        .with_spinner(spinner::styles::SAND);
+    let theme = Theme::with(spinner::styles::SAND, bar::styles::PARALLELOGRAM);
 
     let mut signals = Signals::new([Signal::Int]).expect("signal handler");
 

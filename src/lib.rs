@@ -61,12 +61,16 @@
 //! ## Themes
 //!
 //! A [`Theme`] bundles a [`Spinner`](crate::spinner::Spinner) and a [`Bar`](crate::bar::Bar) into a
-//! single configuration object that can be passed to both the futures and streams progress APIs:
+//! single configuration object that can be passed to both the futures and streams progress APIs.
+//! Three constructors form a ladder: [`Theme::default`] for "sensible defaults, no bar",
+//! [`Theme::with`] to name a spinner and bar in one call, and [`Theme::new`] when building
+//! piece-by-piece (e.g. with a custom bar width or layout):
 //!
 //! ```rust
-//! let theme = strides::Theme::new()
-//!     .with_bar(strides::bar::styles::PARALLELOGRAM)
-//!     .with_spinner(strides::spinner::styles::DOTS_3);
+//! let theme = strides::Theme::with(
+//!     strides::spinner::styles::DOTS_3,
+//!     strides::bar::styles::PARALLELOGRAM,
+//! );
 //! ```
 //!
 //! A bare [`Spinner`](crate::spinner::Spinner) can also be passed directly wherever a

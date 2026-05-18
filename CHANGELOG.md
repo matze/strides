@@ -23,6 +23,9 @@
   `Stream::size_hint` so bounded sources like `iter(Vec)` and `iter(0..n)`
   render a filled bar with no extra ceremony; `with_len(n)` overrides when the
   hint is missing or inaccurate.
+- Add `Theme::with(spinner, bar)` for the common case of naming both pieces in
+  one call: `Theme::with(DOTS_3, SHADED)` instead of
+  `Theme::new().with_spinner(DOTS_3).with_bar(SHADED)`.
 
 
 ## 1.0.0-rc.2

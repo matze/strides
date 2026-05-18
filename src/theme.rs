@@ -9,6 +9,10 @@
 //! ```rust
 //! use strides::{bar, spinner, Theme};
 //!
+//! // Pair a spinner with a bar in one call.
+//! let theme = Theme::with(spinner::styles::DOTS_3, bar::styles::SHADED);
+//!
+//! // Or build piece-by-piece when you need to set width or layout too.
 //! let theme = Theme::new()
 //!     .with_spinner(spinner::styles::DOTS_3)
 //!     .with_bar(bar::styles::SHADED)
@@ -52,6 +56,13 @@ impl<'a> Theme<'a> {
             bar_width: None,
             layout: Layout::DEFAULT,
         }
+    }
+
+    /// Create a theme that pairs `spinner` with `bar`. Sugar for
+    /// `Theme::new().with_spinner(spinner).with_bar(bar)` — the spinner + bar combination is the
+    /// overwhelmingly common case, and `Theme::with` names both at once instead of chaining.
+    pub const fn with(spinner: Spinner<'a>, bar: Bar<'a>) -> Self {
+        Self::new().with_spinner(spinner).with_bar(bar)
     }
 
     /// Set the [`Spinner`] used to indicate ongoing activity.

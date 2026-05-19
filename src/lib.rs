@@ -199,10 +199,14 @@
 //!
 //! ## Output
 //!
-//! strides currently renders all progress output to `stdout`. When `stdout` is not a terminal (for
-//! example, when the program's output is redirected to a file or piped to another command) progress
-//! rendering is suppressed entirely. Futures and streams still run to completion, but no spinner,
-//! bar, or message bytes are written.
+//! strides renders progress to the stream selected by [`Output`], defaulting to `stdout`. Set it
+//! per theme with [`Theme::with_output`](crate::Theme::with_output) — render to `stderr` when
+//! `stdout` carries the program's real output (e.g. a value captured by shell command
+//! substitution) so the spinner stays visible without corrupting the captured bytes.
+//!
+//! When the selected stream is not a terminal (for example, when it is redirected to a file or
+//! piped to another command) progress rendering is suppressed entirely. Futures and streams still
+//! run to completion, but no spinner, bar, or message bytes are written.
 //!
 //! [`Future`]: std::future::Future
 //! [`Stream`]: futures_lite::Stream
@@ -225,4 +229,5 @@ pub(crate) mod state;
 
 pub use layout::{Layout, RenderContext, Segment};
 pub use progressive::{Progressive, ProgressiveFuture, ProgressiveStream};
+pub use term::Output;
 pub use theme::Theme;

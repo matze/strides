@@ -28,7 +28,6 @@ pub use group::Group;
 
 use std::borrow::Cow;
 use std::fmt::Display;
-use std::io::IsTerminal;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -42,7 +41,7 @@ use crate::line::{FrameContext, Line};
 use crate::progressive::Progressive;
 use crate::spinner::Ticks;
 use crate::state::State;
-use crate::term::CursorGuard;
+use crate::term::{CursorGuard, Output};
 use crate::Theme;
 
 /// Materialised rendering bits used by the standalone path.
@@ -52,6 +51,7 @@ struct Rendering<'a> {
     spinner_char: Option<char>,
     spinner_style: Style,
     annotation_style: Style,
+    output: Output,
     is_tty: bool,
     _guard: CursorGuard,
 }
@@ -242,13 +242,13 @@ where
                         spinner_style: r.spinner_style,
                         annotation_style: r.annotation_style,
                     };
-                    r.line.standalone_render(this.state, &frame, r.is_tty);
+                    r.line.standalone_render(this.state, &frame, r.output, r.is_tty);
                 }
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
                 if let RenderingState::Active(r) = &*this.rendering {
-                    Line::standalone_clear(r.is_tty);
+                    Line::standalone_clear(r.output, r.is_tty);
                 }
                 Poll::Ready(None)
             }
@@ -511,13 +511,13 @@ where
                         spinner_style: r.spinner_style,
                         annotation_style: r.annotation_style,
                     };
-                    r.line.standalone_render(this.state, &frame, r.is_tty);
+                    r.line.standalone_render(this.state, &frame, r.output, r.is_tty);
                 }
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
                 if let RenderingState::Active(r) = &*this.rendering {
-                    Line::standalone_clear(r.is_tty);
+                    Line::standalone_clear(r.output, r.is_tty);
                 }
                 Poll::Ready(None)
             }
@@ -711,13 +711,13 @@ where
                         spinner_style: r.spinner_style,
                         annotation_style: r.annotation_style,
                     };
-                    r.line.standalone_render(this.state, &frame, r.is_tty);
+                    r.line.standalone_render(this.state, &frame, r.output, r.is_tty);
                 }
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
                 if let RenderingState::Active(r) = &*this.rendering {
-                    Line::standalone_clear(r.is_tty);
+                    Line::standalone_clear(r.output, r.is_tty);
                 }
                 Poll::Ready(None)
             }
@@ -736,7 +736,8 @@ fn materialize_rendering<'a>(
         return;
     }
     let theme = theme_override.cloned().unwrap_or_default();
-    let is_tty = std::io::stdout().is_terminal();
+    let output = theme.output;
+    let is_tty = output.is_terminal();
     let ticks = theme.spinner.ticks();
     let line = Line::new(&theme);
     *rendering = RenderingState::Active(Rendering {
@@ -745,8 +746,9 @@ fn materialize_rendering<'a>(
         spinner_char: None,
         spinner_style: spinner_style_override.unwrap_or_default(),
         annotation_style: annotation_style_override.unwrap_or_default(),
+        output,
         is_tty,
-        _guard: CursorGuard { is_tty },
+        _guard: CursorGuard { output, is_tty },
     });
 }
 

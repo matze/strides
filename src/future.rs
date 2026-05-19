@@ -18,7 +18,6 @@ pub use join::{join, Join};
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::future::Future;
-use std::io::IsTerminal;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -32,7 +31,7 @@ use crate::line::{FrameContext, Line};
 use crate::progressive::Progressive;
 use crate::spinner::Ticks;
 use crate::state::State;
-use crate::term::CursorGuard;
+use crate::term::{CursorGuard, Output};
 use crate::Theme;
 
 /// Materialised rendering bits used by the standalone path: line, spinner ticks, cursor guard.
@@ -42,18 +41,18 @@ pub(super) struct Rendering<'a> {
     pub(super) spinner_char: Option<char>,
     pub(super) spinner_style: Style,
     pub(super) annotation_style: Style,
+    pub(super) output: Output,
     pub(super) is_tty: bool,
     pub(super) _guard: CursorGuard,
 }
 
 /// Lifecycle of the standalone rendering bits.
 pub(super) enum RenderingState<'a> {
-    /// Constructed but not yet polled. Materialise on first poll using the row's theme override
-    /// (or [`Theme::default()`] when none was set).
+    /// Constructed but not yet polled.
     Pending,
-    /// Materialised; standalone rendering is active.
+    /// Standalone rendering is active.
     Active(Rendering<'a>),
-    /// A [`Group`] owns rendering for this row; no standalone rendering will happen.
+    /// A [`Group`] owns rendering for this row. No standalone rendering will happen.
     Detached,
 }
 
@@ -226,7 +225,8 @@ where
 
         if matches!(this.rendering, RenderingState::Pending) {
             let theme = this.theme_override.clone().unwrap_or_default();
-            let is_tty = std::io::stdout().is_terminal();
+            let output = theme.output;
+            let is_tty = output.is_terminal();
             let ticks = theme.spinner.ticks();
             let line = Line::new(&theme);
             // Preserve the legacy behaviour where the bar appears at 0% even with no progress stream.
@@ -237,8 +237,9 @@ where
                 spinner_char: None,
                 spinner_style: this.spinner_style_override.unwrap_or_default(),
                 annotation_style: this.annotation_style_override.unwrap_or_default(),
+                output,
                 is_tty,
-                _guard: CursorGuard { is_tty },
+                _guard: CursorGuard { output, is_tty },
             });
         }
 
@@ -278,9 +279,9 @@ where
                         spinner_style: r.spinner_style,
                         annotation_style: r.annotation_style,
                     };
-                    r.line.standalone_render(this.state, &frame, r.is_tty);
+                    r.line.standalone_render(this.state, &frame, r.output, r.is_tty);
                 }
-                Poll::Ready(_) => Line::standalone_clear(r.is_tty),
+                Poll::Ready(_) => Line::standalone_clear(r.output, r.is_tty),
                 _ => {}
             }
         }

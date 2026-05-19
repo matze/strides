@@ -8,7 +8,6 @@
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::future::Future;
-use std::io::IsTerminal;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -196,7 +195,8 @@ where
 
         if matches!(this.rendering, RenderingState::Pending) {
             let theme = this.theme_override.clone().unwrap_or_default();
-            let is_tty = std::io::stdout().is_terminal();
+            let output = theme.output;
+            let is_tty = output.is_terminal();
             let ticks = theme.spinner.ticks();
             let line = Line::new(&theme);
             // `standalone_render` reads progress from `State`, but `Join`'s `progress()` is
@@ -211,8 +211,9 @@ where
                 spinner_char: None,
                 spinner_style: this.spinner_style_override.unwrap_or_default(),
                 annotation_style: this.annotation_style_override.unwrap_or_default(),
+                output,
                 is_tty,
-                _guard: CursorGuard { is_tty },
+                _guard: CursorGuard { output, is_tty },
             });
         }
 
@@ -261,13 +262,13 @@ where
                     spinner_style: r.spinner_style,
                     annotation_style: r.annotation_style,
                 };
-                r.line.standalone_render(this.state, &frame, r.is_tty);
+                r.line.standalone_render(this.state, &frame, r.output, r.is_tty);
             }
         }
 
         if this.futs.is_empty() {
             if let RenderingState::Active(r) = &*this.rendering {
-                Line::standalone_clear(r.is_tty);
+                Line::standalone_clear(r.output, r.is_tty);
             }
             Poll::Ready(std::mem::take(this.results))
         } else {

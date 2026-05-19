@@ -22,6 +22,7 @@
 use crate::bar::Bar;
 use crate::layout::Layout;
 use crate::spinner::{styles, Spinner};
+use crate::term::Output;
 
 /// Combined theme for progress display, bundling a [`Spinner`] and a [`Bar`].
 #[derive(Clone)]
@@ -34,6 +35,8 @@ pub struct Theme<'a> {
     pub(crate) bar_width: Option<usize>,
     /// Ordering and formatting of the rendered progress line.
     pub(crate) layout: Layout,
+    /// Standard stream the rendered line is written to.
+    pub(crate) output: Output,
 }
 
 impl Default for Theme<'_> {
@@ -55,6 +58,7 @@ impl<'a> Theme<'a> {
             bar: Bar::empty(),
             bar_width: None,
             layout: Layout::DEFAULT,
+            output: Output::Stdout,
         }
     }
 
@@ -87,6 +91,13 @@ impl<'a> Theme<'a> {
     /// Set the [`Layout`] controlling segment order, spacing and per-segment formatting.
     pub fn with_layout(mut self, layout: Layout) -> Self {
         self.layout = layout;
+        self
+    }
+
+    /// Select the standard stream the rendered line is written to. Defaults to
+    /// [`Output::Stdout`]; pass [`Output::Stderr`] to keep stdout clean for captured output.
+    pub const fn with_output(mut self, output: Output) -> Self {
+        self.output = output;
         self
     }
 

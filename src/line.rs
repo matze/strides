@@ -4,7 +4,6 @@
 //! reusable buffer. It only fills the buffer — callers (standalone wrappers, [`Group`]s) own the
 //! actual stdout writes and cursor management.
 
-use std::io::Write;
 use std::time::Duration;
 
 use owo_colors::Style;
@@ -12,7 +11,7 @@ use owo_colors::Style;
 use crate::bar::Bar;
 use crate::layout::{Layout, RenderContext};
 use crate::progressive::Progressive;
-use crate::term::{self, clear_line};
+use crate::term::{self, clear_line, Output};
 use crate::Theme;
 
 /// Per-frame rendering inputs that are not part of [`Progressive`]. The spinner character, the
@@ -69,33 +68,36 @@ impl<'a> Line<'a> {
         &self.render_buf
     }
 
-    /// Render `item` and write the result to stdout as the single line of a standalone wrapper:
+    /// Render `item` and write the result to `output` as the single line of a standalone wrapper:
     /// hide cursor, clear current line, write content, flush. No-op when `is_tty` is false.
     pub(crate) fn standalone_render<'b, P: Progressive<'b> + ?Sized>(
         &mut self,
         item: &P,
         frame: &FrameContext,
+        output: Output,
         is_tty: bool,
     ) {
         if !is_tty {
             return;
         }
         let _ = self.render_into(item, frame);
-        let mut stdout = std::io::stdout().lock();
-        let _ = stdout.write_all(term::HIDE_CURSOR);
-        let _ = clear_line(&mut stdout);
-        let _ = stdout.write_all(self.render_buf.as_bytes());
-        let _ = stdout.flush();
+        output.with_lock(|w| {
+            let _ = w.write_all(term::HIDE_CURSOR);
+            let _ = clear_line(w);
+            let _ = w.write_all(self.render_buf.as_bytes());
+            let _ = w.flush();
+        });
     }
 
     /// Clear the current line. Used by a standalone wrapper when its work completes; cursor
     /// restoration happens via the wrapper's [`CursorGuard`](crate::term::CursorGuard).
-    pub(crate) fn standalone_clear(is_tty: bool) {
+    pub(crate) fn standalone_clear(output: Output, is_tty: bool) {
         if !is_tty {
             return;
         }
-        let mut stdout = std::io::stdout().lock();
-        let _ = clear_line(&mut stdout);
-        let _ = stdout.flush();
+        output.with_lock(|w| {
+            let _ = clear_line(w);
+            let _ = w.flush();
+        });
     }
 }

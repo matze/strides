@@ -1,7 +1,6 @@
 //! Multi-line progress display for concurrent streams.
 
 use std::collections::VecDeque;
-use std::io::{IsTerminal, Write};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -12,7 +11,7 @@ use owo_colors::Style;
 use crate::line::{FrameContext, Line};
 use crate::progressive::ProgressiveStream;
 use crate::spinner::Ticks;
-use crate::term::{self, clear_line, CursorGuard};
+use crate::term::{self, clear_line, CursorGuard, Output};
 use crate::Theme;
 
 /// One slot in a [`Group`]: the wrapped stream and its render line.
@@ -44,6 +43,7 @@ pub struct Group<'a, I> {
     annotation_style: Style,
     with_elapsed_time: bool,
     start: Option<Instant>,
+    output: Output,
     is_tty: bool,
     rendered_lines: usize,
     dirty: bool,
@@ -54,7 +54,8 @@ impl<'a, I> Group<'a, I> {
     /// Create a new group using `theme` as the default for rows that don't supply their own.
     pub fn new(theme: impl Into<Theme<'a>>) -> Self {
         let theme = theme.into();
-        let is_tty = std::io::stdout().is_terminal();
+        let output = theme.output;
+        let is_tty = output.is_terminal();
         let ticks = theme.spinner.ticks();
         Self {
             slots: Vec::new(),
@@ -66,10 +67,11 @@ impl<'a, I> Group<'a, I> {
             annotation_style: Style::new(),
             with_elapsed_time: false,
             start: None,
+            output,
             is_tty,
             rendered_lines: 0,
             dirty: true,
-            _guard: CursorGuard { is_tty },
+            _guard: CursorGuard { output, is_tty },
         }
     }
 
@@ -155,36 +157,37 @@ where
             this.dirty = false;
             let elapsed = this.start.expect("start initialised above").elapsed();
 
-            let mut stdout = std::io::stdout().lock();
-            let _ = stdout.write_all(term::HIDE_CURSOR);
+            this.output.with_lock(|stdout| {
+                let _ = stdout.write_all(term::HIDE_CURSOR);
 
-            for slot in this.slots.iter_mut().flatten() {
-                let _ = clear_line(&mut stdout);
-                let item = slot.work.as_ref().get_ref();
-                let frame = FrameContext {
-                    spinner_char: this.spinner_char,
-                    elapsed,
-                    show_elapsed: item.show_elapsed_time().unwrap_or(this.with_elapsed_time),
-                    spinner_style: item.spinner_style().unwrap_or(this.spinner_style),
-                    annotation_style: item.annotation_style().unwrap_or(this.annotation_style),
-                };
-                let rendered = slot.line.render_into(item, &frame);
-                let _ = stdout.write_all(rendered.as_bytes());
-                let _ = stdout.write_all(b"\n");
-            }
+                for slot in this.slots.iter_mut().flatten() {
+                    let _ = clear_line(stdout);
+                    let item = slot.work.as_ref().get_ref();
+                    let frame = FrameContext {
+                        spinner_char: this.spinner_char,
+                        elapsed,
+                        show_elapsed: item.show_elapsed_time().unwrap_or(this.with_elapsed_time),
+                        spinner_style: item.spinner_style().unwrap_or(this.spinner_style),
+                        annotation_style: item.annotation_style().unwrap_or(this.annotation_style),
+                    };
+                    let rendered = slot.line.render_into(item, &frame);
+                    let _ = stdout.write_all(rendered.as_bytes());
+                    let _ = stdout.write_all(b"\n");
+                }
 
-            let stale = this.rendered_lines.saturating_sub(active_count);
-            for _ in 0..stale {
-                let _ = clear_line(&mut stdout);
-                let _ = stdout.write_all(b"\n");
-            }
+                let stale = this.rendered_lines.saturating_sub(active_count);
+                for _ in 0..stale {
+                    let _ = clear_line(stdout);
+                    let _ = stdout.write_all(b"\n");
+                }
 
-            let total = active_count + stale;
-            if total > 0 {
-                let _ = term::move_up(&mut stdout, total as u16);
-            }
+                let total = active_count + stale;
+                if total > 0 {
+                    let _ = term::move_up(stdout, total as u16);
+                }
 
-            let _ = stdout.flush();
+                let _ = stdout.flush();
+            });
             this.rendered_lines = active_count;
         }
 

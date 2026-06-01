@@ -75,8 +75,9 @@ pub struct Ticks<'a> {
     all_chars: &'a str,
     /// Iterator over the current cycle.
     chars: std::str::Chars<'a>,
-    /// One-shot delay that is reset after each tick.
-    delay: Delay,
+    /// One-shot delay that is reset after each tick. `None` for an inactive spinner, which never
+    /// yields.
+    delay: Option<Delay>,
     /// Interval between ticks.
     interval: Duration,
 }
@@ -87,16 +88,16 @@ impl Stream for Ticks<'_> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<char>> {
         let this = self.get_mut();
 
-        // Inactive spinner: never yield a character.
-        if this.all_chars.is_empty() {
+        // An inactive spinner carries no delay and never yields a character.
+        let Some(delay) = &mut this.delay else {
             return Poll::Pending;
-        }
+        };
 
         // Wait for the current delay to expire.
-        match Pin::new(&mut this.delay).poll(cx) {
+        match Pin::new(&mut *delay).poll(cx) {
             Poll::Ready(()) => {
-                this.delay.reset(this.interval);
-                let _ = Pin::new(&mut this.delay).poll(cx);
+                delay.reset(this.interval);
+                let _ = Pin::new(delay).poll(cx);
             }
             Poll::Pending => return Poll::Pending,
         }
@@ -148,18 +149,13 @@ impl<'a> Spinner<'a> {
 
     /// Return a stream of characters at the set interval.
     pub fn ticks(&self) -> Ticks<'a> {
-        // An inactive spinner stores `Duration::MAX` as a sentinel. Construct the underlying
-        // [`Delay`] with a finite but practically unreachable interval so `Instant + interval`
-        // doesn't overflow; `poll_next` short-circuits to `Pending` regardless.
-        let delay_interval = if self.chars.is_empty() {
-            Duration::from_secs(60 * 60 * 24 * 365)
-        } else {
-            self.interval
-        };
+        // An inactive spinner (empty `chars`) carries no delay; `poll_next` short-circuits to
+        // `Pending` so it never yields and `Instant + interval` is never computed.
+        let delay = (!self.chars.is_empty()).then(|| Delay::new(self.interval));
         Ticks {
             all_chars: self.chars,
             chars: self.chars.chars(),
-            delay: Delay::new(delay_interval),
+            delay,
             interval: self.interval,
         }
     }

@@ -40,8 +40,8 @@ pub struct Theme<'a> {
 }
 
 impl Default for Theme<'_> {
-    /// A theme that animates out of the box: [`styles::DOTS_3`](crate::spinner::styles::DOTS_3)
-    /// spinner, no bar, default [`Layout`]. For a fully empty theme to build on, use
+    /// A theme that animates out of the box: [`styles::DOTS_3`] spinner, no bar, default
+    /// [`Layout`]. For a fully empty theme to build on, use
     /// [`Theme::new`].
     fn default() -> Self {
         Self::new().with_spinner(styles::DOTS_3)

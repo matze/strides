@@ -139,7 +139,7 @@
 //! Import the [`StreamExt`](crate::stream::StreamExt) extension trait. Standalone:
 //! [`progress_count(theme)`](crate::stream::StreamExt::progress_count) for "count items, derive
 //! the bar from the total" — bounded streams like `iter(Vec)` and `iter(0..n)` pick up the total
-//! from [`Stream::size_hint`] automatically; pair with
+//! from [`Stream::size_hint`](futures_lite::Stream::size_hint) automatically; pair with
 //! [`with_len(n)`](crate::stream::ProgressCountStream::with_len) when the hint is absent or
 //! inaccurate. [`progress(theme, fraction_fn)`](crate::stream::StreamExt::progress) when each item
 //! carries enough information to compute completion, or

@@ -10,18 +10,14 @@ use std::fmt::Display;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Duration;
 
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 use owo_colors::Style;
 use pin_project_lite::pin_project;
 
-use super::{Rendering, RenderingState};
-use crate::line::{FrameContext, Line};
+use crate::progress::Progress;
 use crate::progressive::Progressive;
-use crate::state::State;
-use crate::term::CursorGuard;
 use crate::Theme;
 
 pin_project! {
@@ -37,11 +33,7 @@ pin_project! {
         total: usize,
         #[pin]
         messages: M,
-        state: State,
-        theme_override: Option<Theme<'a>>,
-        spinner_style_override: Option<Style>,
-        annotation_style_override: Option<Style>,
-        rendering: RenderingState<'a>,
+        core: Progress<'a>,
     }
 }
 
@@ -74,11 +66,7 @@ impl<F: Future> Join<'_, F> {
             completed: 0,
             total,
             messages: stream::pending(),
-            state: State::new(),
-            theme_override: None,
-            spinner_style_override: None,
-            annotation_style_override: None,
-            rendering: RenderingState::Pending,
+            core: Progress::new(),
         }
     }
 }
@@ -88,32 +76,32 @@ impl<'a, F: Future, M> Join<'a, F, M> {
     /// bar / cursor on its own line when awaited) and the per-row override path inside a
     /// [`Group`](super::Group).
     pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
-        self.theme_override = Some(theme.into());
+        self.core.set_theme(theme.into());
         self
     }
 
     /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
     pub fn with_spinner_style(mut self, style: Style) -> Self {
-        self.spinner_style_override = Some(style);
+        self.core.set_spinner_style(style);
         self
     }
 
     /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
     /// default.
     pub fn with_annotation_style(mut self, style: Style) -> Self {
-        self.annotation_style_override = Some(style);
+        self.core.set_annotation_style(style);
         self
     }
 
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
     pub fn with_label(mut self, label: impl Display) -> Self {
-        self.state.set_label(label.to_string());
+        self.core.set_label(label.to_string());
         self
     }
 
     /// Prepend the elapsed time to the line.
     pub fn with_elapsed_time(mut self) -> Self {
-        self.state.enable_elapsed_time();
+        self.core.enable_elapsed_time();
         self
     }
 
@@ -131,22 +119,18 @@ impl<'a, F: Future, M> Join<'a, F, M> {
             completed: self.completed,
             total: self.total,
             messages,
-            state: self.state,
-            theme_override: self.theme_override,
-            spinner_style_override: self.spinner_style_override,
-            annotation_style_override: self.annotation_style_override,
-            rendering: self.rendering,
+            core: self.core,
         }
     }
 }
 
 impl<'a, F: Future, M> Progressive<'a> for Join<'a, F, M> {
     fn label(&self) -> Option<&str> {
-        self.state.label()
+        self.core.label()
     }
 
     fn message(&self) -> Option<&str> {
-        self.state.message()
+        self.core.message()
     }
 
     fn progress(&self) -> Option<f64> {
@@ -158,27 +142,23 @@ impl<'a, F: Future, M> Progressive<'a> for Join<'a, F, M> {
     }
 
     fn detach_rendering(&mut self) {
-        self.rendering = RenderingState::Detached;
+        self.core.detach_rendering();
     }
 
     fn theme(&self) -> Option<&Theme<'a>> {
-        self.theme_override.as_ref()
+        self.core.theme()
     }
 
     fn spinner_style(&self) -> Option<Style> {
-        self.spinner_style_override
+        self.core.spinner_style()
     }
 
     fn annotation_style(&self) -> Option<Style> {
-        self.annotation_style_override
+        self.core.annotation_style()
     }
 
-    fn show_elapsed_time(&self) -> Option<bool> {
-        if self.state.with_elapsed_time {
-            Some(true)
-        } else {
-            None
-        }
+    fn show_elapsed_time(&self) -> bool {
+        self.core.show_elapsed_time()
     }
 }
 
@@ -193,41 +173,18 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
 
-        if matches!(this.rendering, RenderingState::Pending) {
-            let theme = this.theme_override.clone().unwrap_or_default();
-            let output = theme.output;
-            let is_tty = output.is_terminal();
-            let ticks = theme.spinner.ticks();
-            let line = Line::new(&theme);
+        if this.core.materialize() && *this.total > 0 {
             // `standalone_render` reads progress from `State`, but `Join`'s `progress()` is
             // derived from `completed / total`. Mirror it into state so the bar renders.
-            if *this.total > 0 {
-                this.state
-                    .set_progress(*this.completed as f64 / *this.total as f64);
-            }
-            *this.rendering = RenderingState::Active(Rendering {
-                line,
-                ticks,
-                spinner_char: None,
-                spinner_style: this.spinner_style_override.unwrap_or_default(),
-                annotation_style: this.annotation_style_override.unwrap_or_default(),
-                output,
-                is_tty,
-                _guard: CursorGuard { output, is_tty },
-            });
+            this.core
+                .state
+                .set_progress(*this.completed as f64 / *this.total as f64);
         }
 
-        let mut dirty = false;
-
-        if let RenderingState::Active(r) = &mut *this.rendering {
-            if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
-                r.spinner_char = ch;
-                dirty = true;
-            }
-        }
+        let mut dirty = this.core.tick(cx);
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
-            this.state.set_message(msg.into());
+            this.core.set_message(msg.into());
             dirty = true;
         }
 
@@ -239,7 +196,8 @@ where
                     drop(this.futs.swap_remove(i));
                     *this.completed += 1;
                     if *this.total > 0 {
-                        this.state
+                        this.core
+                            .state
                             .set_progress(*this.completed as f64 / *this.total as f64);
                     }
                     dirty = true;
@@ -248,28 +206,12 @@ where
             }
         }
 
-        if let RenderingState::Active(r) = &mut *this.rendering {
-            if !this.futs.is_empty() && dirty {
-                let elapsed = if this.state.with_elapsed_time {
-                    this.state.elapsed()
-                } else {
-                    Duration::ZERO
-                };
-                let frame = FrameContext {
-                    spinner_char: r.spinner_char,
-                    elapsed,
-                    show_elapsed: this.state.with_elapsed_time,
-                    spinner_style: r.spinner_style,
-                    annotation_style: r.annotation_style,
-                };
-                r.line.standalone_render(this.state, &frame, r.output, r.is_tty);
-            }
+        if !this.futs.is_empty() && dirty {
+            this.core.render();
         }
 
         if this.futs.is_empty() {
-            if let RenderingState::Active(r) = &*this.rendering {
-                Line::standalone_clear(r.output, r.is_tty);
-            }
+            this.core.clear();
             Poll::Ready(std::mem::take(this.results))
         } else {
             Poll::Pending

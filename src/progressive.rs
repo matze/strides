@@ -82,9 +82,11 @@ pub trait Progressive<'a> {
         None
     }
 
-    /// Per-row override for showing elapsed time. `None` means "use the Group's default".
-    fn show_elapsed_time(&self) -> Option<bool> {
-        None
+    /// Per-row opt-in for showing elapsed time. Returning `true` forces the elapsed-time segment
+    /// on for this row; the default `false` defers to the parent [`Group`](crate::future::Group)'s
+    /// own [`with_elapsed_time`](crate::future::Group::with_elapsed_time) setting.
+    fn show_elapsed_time(&self) -> bool {
+        false
     }
 }
 

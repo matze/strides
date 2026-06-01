@@ -30,42 +30,15 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Duration;
 
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
 use owo_colors::Style;
 use pin_project_lite::pin_project;
 
-use crate::line::{FrameContext, Line};
+use crate::progress::Progress;
 use crate::progressive::Progressive;
-use crate::spinner::Ticks;
-use crate::state::State;
-use crate::term::{CursorGuard, Output};
 use crate::Theme;
-
-/// Materialised rendering bits used by the standalone path.
-struct Rendering<'a> {
-    line: Line<'a>,
-    ticks: Ticks<'a>,
-    spinner_char: Option<char>,
-    spinner_style: Style,
-    annotation_style: Style,
-    output: Output,
-    is_tty: bool,
-    _guard: CursorGuard,
-}
-
-/// Lifecycle of the standalone rendering bits.
-enum RenderingState<'a> {
-    /// Constructed but not yet polled. Materialise on first poll using the row's theme override
-    /// (or [`Theme::default()`] when none was set).
-    Pending,
-    /// Materialised; standalone rendering is active.
-    Active(Rendering<'a>),
-    /// A [`Group`] owns rendering for this row; no standalone rendering will happen.
-    Detached,
-}
 
 pin_project! {
     /// A [`Stream`] wrapped to track progress derived from a fraction closure.
@@ -75,12 +48,8 @@ pin_project! {
         fraction_fn: F,
         #[pin]
         messages: M,
-        state: State,
+        core: Progress<'a>,
         current: usize,
-        theme_override: Option<Theme<'a>>,
-        spinner_style_override: Option<Style>,
-        annotation_style_override: Option<Style>,
-        rendering: RenderingState<'a>,
     }
 }
 
@@ -90,12 +59,8 @@ impl<S, F> ProgressStream<'_, S, F> {
             inner,
             fraction_fn,
             messages: stream::pending(),
-            state: State::new(),
+            core: Progress::new(),
             current: 0,
-            theme_override: None,
-            spinner_style_override: None,
-            annotation_style_override: None,
-            rendering: RenderingState::Pending,
         }
     }
 }
@@ -103,33 +68,33 @@ impl<S, F> ProgressStream<'_, S, F> {
 impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
     pub fn with_label(mut self, label: impl Display) -> Self {
-        self.state.set_label(label.to_string());
+        self.core.set_label(label.to_string());
         self
     }
 
     /// Prepend the elapsed time to the line.
     pub fn with_elapsed_time(mut self) -> Self {
-        self.state.enable_elapsed_time();
+        self.core.enable_elapsed_time();
         self
     }
 
     /// Render this row with `theme`. Drives standalone rendering when the stream is polled
     /// directly; overrides the parent [`Group`]'s theme when pushed.
     pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
-        self.theme_override = Some(theme.into());
+        self.core.set_theme(theme.into());
         self
     }
 
     /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
     pub fn with_spinner_style(mut self, style: Style) -> Self {
-        self.spinner_style_override = Some(style);
+        self.core.set_spinner_style(style);
         self
     }
 
     /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
     /// default.
     pub fn with_annotation_style(mut self, style: Style) -> Self {
-        self.annotation_style_override = Some(style);
+        self.core.set_annotation_style(style);
         self
     }
 
@@ -145,53 +110,45 @@ impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
             inner: self.inner,
             fraction_fn: self.fraction_fn,
             messages,
-            state: self.state,
+            core: self.core,
             current: self.current,
-            theme_override: self.theme_override,
-            spinner_style_override: self.spinner_style_override,
-            annotation_style_override: self.annotation_style_override,
-            rendering: self.rendering,
         }
     }
 }
 
 impl<'a, S, F, M> Progressive<'a> for ProgressStream<'a, S, F, M> {
     fn label(&self) -> Option<&str> {
-        self.state.label()
+        self.core.label()
     }
     fn message(&self) -> Option<&str> {
-        self.state.message()
+        self.core.message()
     }
     fn progress(&self) -> Option<f64> {
-        self.state.progress()
+        self.core.progress()
     }
     fn bytes_done(&self) -> u64 {
-        self.state.bytes_done()
+        self.core.bytes_done()
     }
     fn bytes_total(&self) -> Option<u64> {
-        self.state.bytes_total()
+        self.core.bytes_total()
     }
     fn rate(&self) -> Option<f64> {
-        self.state.rate()
+        self.core.rate()
     }
     fn detach_rendering(&mut self) {
-        self.rendering = RenderingState::Detached;
+        self.core.detach_rendering();
     }
     fn theme(&self) -> Option<&Theme<'a>> {
-        self.theme_override.as_ref()
+        self.core.theme()
     }
     fn spinner_style(&self) -> Option<Style> {
-        self.spinner_style_override
+        self.core.spinner_style()
     }
     fn annotation_style(&self) -> Option<Style> {
-        self.annotation_style_override
+        self.core.annotation_style()
     }
-    fn show_elapsed_time(&self) -> Option<bool> {
-        if self.state.with_elapsed_time {
-            Some(true)
-        } else {
-            None
-        }
+    fn show_elapsed_time(&self) -> bool {
+        self.core.show_elapsed_time()
     }
 }
 
@@ -207,49 +164,23 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
 
-        materialize_rendering(
-            this.rendering,
-            this.theme_override.as_ref(),
-            *this.spinner_style_override,
-            *this.annotation_style_override,
-        );
-
-        if let RenderingState::Active(r) = &mut *this.rendering {
-            if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
-                r.spinner_char = ch;
-            }
-        }
+        this.core.materialize();
+        this.core.tick(cx);
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
-            this.state.set_message(msg.into());
+            this.core.set_message(msg.into());
         }
 
         match this.inner.as_mut().poll_next(cx) {
             Poll::Ready(Some(item)) => {
                 let completed = (this.fraction_fn)(*this.current, &item);
                 *this.current += 1;
-                this.state.set_progress(completed);
-                if let RenderingState::Active(r) = &mut *this.rendering {
-                    let elapsed = if this.state.with_elapsed_time {
-                        this.state.elapsed()
-                    } else {
-                        Duration::ZERO
-                    };
-                    let frame = FrameContext {
-                        spinner_char: r.spinner_char,
-                        elapsed,
-                        show_elapsed: this.state.with_elapsed_time,
-                        spinner_style: r.spinner_style,
-                        annotation_style: r.annotation_style,
-                    };
-                    r.line.standalone_render(this.state, &frame, r.output, r.is_tty);
-                }
+                this.core.state.set_progress(completed);
+                this.core.render();
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                if let RenderingState::Active(r) = &*this.rendering {
-                    Line::standalone_clear(r.output, r.is_tty);
-                }
+                this.core.clear();
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
@@ -342,11 +273,7 @@ pin_project! {
         bytes_fn: F,
         #[pin]
         messages: M,
-        state: State,
-        theme_override: Option<Theme<'a>>,
-        spinner_style_override: Option<Style>,
-        annotation_style_override: Option<Style>,
-        rendering: RenderingState<'a>,
+        core: Progress<'a>,
     }
 }
 
@@ -356,11 +283,7 @@ impl<S, F> ProgressBytesStream<'_, S, F> {
             inner,
             bytes_fn,
             messages: stream::pending(),
-            state: State::new(),
-            theme_override: None,
-            spinner_style_override: None,
-            annotation_style_override: None,
-            rendering: RenderingState::Pending,
+            core: Progress::new(),
         }
     }
 }
@@ -368,39 +291,39 @@ impl<S, F> ProgressBytesStream<'_, S, F> {
 impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
     pub fn with_label(mut self, label: impl Display) -> Self {
-        self.state.set_label(label.to_string());
+        self.core.set_label(label.to_string());
         self
     }
 
     /// Prepend the elapsed time to the line.
     pub fn with_elapsed_time(mut self) -> Self {
-        self.state.enable_elapsed_time();
+        self.core.enable_elapsed_time();
         self
     }
 
     /// Record the total number of bytes expected. Enables the bar and the ETA segment.
     pub fn with_len(mut self, total: u64) -> Self {
-        self.state.set_bytes_total(total);
+        self.core.state.set_bytes_total(total);
         self
     }
 
     /// Render this row with `theme`. Drives standalone rendering when the stream is polled
     /// directly; overrides the parent [`Group`]'s theme when pushed.
     pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
-        self.theme_override = Some(theme.into());
+        self.core.set_theme(theme.into());
         self
     }
 
     /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
     pub fn with_spinner_style(mut self, style: Style) -> Self {
-        self.spinner_style_override = Some(style);
+        self.core.set_spinner_style(style);
         self
     }
 
     /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
     /// default.
     pub fn with_annotation_style(mut self, style: Style) -> Self {
-        self.annotation_style_override = Some(style);
+        self.core.set_annotation_style(style);
         self
     }
 
@@ -416,52 +339,44 @@ impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
             inner: self.inner,
             bytes_fn: self.bytes_fn,
             messages,
-            state: self.state,
-            theme_override: self.theme_override,
-            spinner_style_override: self.spinner_style_override,
-            annotation_style_override: self.annotation_style_override,
-            rendering: self.rendering,
+            core: self.core,
         }
     }
 }
 
 impl<'a, S, F, M> Progressive<'a> for ProgressBytesStream<'a, S, F, M> {
     fn label(&self) -> Option<&str> {
-        self.state.label()
+        self.core.label()
     }
     fn message(&self) -> Option<&str> {
-        self.state.message()
+        self.core.message()
     }
     fn progress(&self) -> Option<f64> {
-        self.state.progress()
+        self.core.progress()
     }
     fn bytes_done(&self) -> u64 {
-        self.state.bytes_done()
+        self.core.bytes_done()
     }
     fn bytes_total(&self) -> Option<u64> {
-        self.state.bytes_total()
+        self.core.bytes_total()
     }
     fn rate(&self) -> Option<f64> {
-        self.state.rate()
+        self.core.rate()
     }
     fn detach_rendering(&mut self) {
-        self.rendering = RenderingState::Detached;
+        self.core.detach_rendering();
     }
     fn theme(&self) -> Option<&Theme<'a>> {
-        self.theme_override.as_ref()
+        self.core.theme()
     }
     fn spinner_style(&self) -> Option<Style> {
-        self.spinner_style_override
+        self.core.spinner_style()
     }
     fn annotation_style(&self) -> Option<Style> {
-        self.annotation_style_override
+        self.core.annotation_style()
     }
-    fn show_elapsed_time(&self) -> Option<bool> {
-        if self.state.with_elapsed_time {
-            Some(true)
-        } else {
-            None
-        }
+    fn show_elapsed_time(&self) -> bool {
+        self.core.show_elapsed_time()
     }
 }
 
@@ -477,48 +392,22 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
 
-        materialize_rendering(
-            this.rendering,
-            this.theme_override.as_ref(),
-            *this.spinner_style_override,
-            *this.annotation_style_override,
-        );
-
-        if let RenderingState::Active(r) = &mut *this.rendering {
-            if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
-                r.spinner_char = ch;
-            }
-        }
+        this.core.materialize();
+        this.core.tick(cx);
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
-            this.state.set_message(msg.into());
+            this.core.set_message(msg.into());
         }
 
         match this.inner.as_mut().poll_next(cx) {
             Poll::Ready(Some(item)) => {
                 let delta = (this.bytes_fn)(&item);
-                this.state.add_bytes(delta);
-                if let RenderingState::Active(r) = &mut *this.rendering {
-                    let elapsed = if this.state.with_elapsed_time {
-                        this.state.elapsed()
-                    } else {
-                        Duration::ZERO
-                    };
-                    let frame = FrameContext {
-                        spinner_char: r.spinner_char,
-                        elapsed,
-                        show_elapsed: this.state.with_elapsed_time,
-                        spinner_style: r.spinner_style,
-                        annotation_style: r.annotation_style,
-                    };
-                    r.line.standalone_render(this.state, &frame, r.output, r.is_tty);
-                }
+                this.core.state.add_bytes(delta);
+                this.core.render();
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                if let RenderingState::Active(r) = &*this.rendering {
-                    Line::standalone_clear(r.output, r.is_tty);
-                }
+                this.core.clear();
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
@@ -539,13 +428,9 @@ pin_project! {
         inner: S,
         #[pin]
         messages: M,
-        state: State,
+        core: Progress<'a>,
         current: u64,
         total: Option<u64>,
-        theme_override: Option<Theme<'a>>,
-        spinner_style_override: Option<Style>,
-        annotation_style_override: Option<Style>,
-        rendering: RenderingState<'a>,
     }
 }
 
@@ -558,13 +443,9 @@ impl<S: Stream> ProgressCountStream<'_, S> {
         Self {
             inner,
             messages: stream::pending(),
-            state: State::new(),
+            core: Progress::new(),
             current: 0,
             total,
-            theme_override: None,
-            spinner_style_override: None,
-            annotation_style_override: None,
-            rendering: RenderingState::Pending,
         }
     }
 }
@@ -572,13 +453,13 @@ impl<S: Stream> ProgressCountStream<'_, S> {
 impl<'a, S, M> ProgressCountStream<'a, S, M> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
     pub fn with_label(mut self, label: impl Display) -> Self {
-        self.state.set_label(label.to_string());
+        self.core.set_label(label.to_string());
         self
     }
 
     /// Prepend the elapsed time to the line.
     pub fn with_elapsed_time(mut self) -> Self {
-        self.state.enable_elapsed_time();
+        self.core.enable_elapsed_time();
         self
     }
 
@@ -592,20 +473,20 @@ impl<'a, S, M> ProgressCountStream<'a, S, M> {
     /// Render this row with `theme`. Drives standalone rendering when the stream is polled
     /// directly; overrides the parent [`Group`]'s theme when pushed.
     pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
-        self.theme_override = Some(theme.into());
+        self.core.set_theme(theme.into());
         self
     }
 
     /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
     pub fn with_spinner_style(mut self, style: Style) -> Self {
-        self.spinner_style_override = Some(style);
+        self.core.set_spinner_style(style);
         self
     }
 
     /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
     /// default.
     pub fn with_annotation_style(mut self, style: Style) -> Self {
-        self.annotation_style_override = Some(style);
+        self.core.set_annotation_style(style);
         self
     }
 
@@ -620,45 +501,37 @@ impl<'a, S, M> ProgressCountStream<'a, S, M> {
         ProgressCountStream {
             inner: self.inner,
             messages,
-            state: self.state,
+            core: self.core,
             current: self.current,
             total: self.total,
-            theme_override: self.theme_override,
-            spinner_style_override: self.spinner_style_override,
-            annotation_style_override: self.annotation_style_override,
-            rendering: self.rendering,
         }
     }
 }
 
 impl<'a, S, M> Progressive<'a> for ProgressCountStream<'a, S, M> {
     fn label(&self) -> Option<&str> {
-        self.state.label()
+        self.core.label()
     }
     fn message(&self) -> Option<&str> {
-        self.state.message()
+        self.core.message()
     }
     fn progress(&self) -> Option<f64> {
-        self.state.progress()
+        self.core.progress()
     }
     fn detach_rendering(&mut self) {
-        self.rendering = RenderingState::Detached;
+        self.core.detach_rendering();
     }
     fn theme(&self) -> Option<&Theme<'a>> {
-        self.theme_override.as_ref()
+        self.core.theme()
     }
     fn spinner_style(&self) -> Option<Style> {
-        self.spinner_style_override
+        self.core.spinner_style()
     }
     fn annotation_style(&self) -> Option<Style> {
-        self.annotation_style_override
+        self.core.annotation_style()
     }
-    fn show_elapsed_time(&self) -> Option<bool> {
-        if self.state.with_elapsed_time {
-            Some(true)
-        } else {
-            None
-        }
+    fn show_elapsed_time(&self) -> bool {
+        self.core.show_elapsed_time()
     }
 }
 
@@ -673,21 +546,11 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
 
-        materialize_rendering(
-            this.rendering,
-            this.theme_override.as_ref(),
-            *this.spinner_style_override,
-            *this.annotation_style_override,
-        );
-
-        if let RenderingState::Active(r) = &mut *this.rendering {
-            if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
-                r.spinner_char = ch;
-            }
-        }
+        this.core.materialize();
+        this.core.tick(cx);
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
-            this.state.set_message(msg.into());
+            this.core.set_message(msg.into());
         }
 
         match this.inner.as_mut().poll_next(cx) {
@@ -695,61 +558,21 @@ where
                 *this.current += 1;
                 if let Some(total) = *this.total {
                     if total > 0 {
-                        this.state.set_progress(*this.current as f64 / total as f64);
+                        this.core
+                            .state
+                            .set_progress(*this.current as f64 / total as f64);
                     }
                 }
-                if let RenderingState::Active(r) = &mut *this.rendering {
-                    let elapsed = if this.state.with_elapsed_time {
-                        this.state.elapsed()
-                    } else {
-                        Duration::ZERO
-                    };
-                    let frame = FrameContext {
-                        spinner_char: r.spinner_char,
-                        elapsed,
-                        show_elapsed: this.state.with_elapsed_time,
-                        spinner_style: r.spinner_style,
-                        annotation_style: r.annotation_style,
-                    };
-                    r.line.standalone_render(this.state, &frame, r.output, r.is_tty);
-                }
+                this.core.render();
                 Poll::Ready(Some(item))
             }
             Poll::Ready(None) => {
-                if let RenderingState::Active(r) = &*this.rendering {
-                    Line::standalone_clear(r.output, r.is_tty);
-                }
+                this.core.clear();
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
         }
     }
-}
-
-fn materialize_rendering<'a>(
-    rendering: &mut RenderingState<'a>,
-    theme_override: Option<&Theme<'a>>,
-    spinner_style_override: Option<Style>,
-    annotation_style_override: Option<Style>,
-) {
-    if !matches!(rendering, RenderingState::Pending) {
-        return;
-    }
-    let theme = theme_override.cloned().unwrap_or_default();
-    let output = theme.output;
-    let is_tty = output.is_terminal();
-    let ticks = theme.spinner.ticks();
-    let line = Line::new(&theme);
-    *rendering = RenderingState::Active(Rendering {
-        line,
-        ticks,
-        spinner_char: None,
-        spinner_style: spinner_style_override.unwrap_or_default(),
-        annotation_style: annotation_style_override.unwrap_or_default(),
-        output,
-        is_tty,
-        _guard: CursorGuard { output, is_tty },
-    });
 }
 
 #[cfg(test)]

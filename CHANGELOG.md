@@ -20,6 +20,11 @@
   pass through with no allocation (previously every yielded message was
   `to_string()`'d into a fresh `String`). Callers passing other `Display` types
   (integers, custom formatters) now need to `format!` at the call site.
+- `Progressive::show_elapsed_time` now returns `bool` (default `false`) instead
+  of `Option<bool>`. A row opts in by returning `true`; a `Group` ORs that with
+  its own `with_elapsed_time` default. The previous `Some(false)` state was
+  unreachable — rows could only opt in — so manual implementors return `true`
+  where they used to return `Some(true)` and drop the `None` arm.
 
 ### Changes
 

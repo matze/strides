@@ -192,7 +192,7 @@ where
                     let frame = FrameContext {
                         spinner_char: this.spinner_char,
                         elapsed,
-                        show_elapsed: item.show_elapsed_time().unwrap_or(this.with_elapsed_time),
+                        show_elapsed: item.show_elapsed_time() || this.with_elapsed_time,
                         spinner_style: item.spinner_style().unwrap_or(this.spinner_style),
                         annotation_style: item.annotation_style().unwrap_or(this.annotation_style),
                     };

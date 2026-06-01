@@ -225,6 +225,7 @@ pub mod term;
 pub mod theme;
 
 pub(crate) mod line;
+pub(crate) mod progress;
 pub(crate) mod state;
 
 pub use layout::{Layout, RenderContext, Segment};

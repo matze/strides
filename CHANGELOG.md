@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+## 1.0.0-rc.3
+
 ### Breaking changes
 
 - The fraction closure passed to `StreamExt::progress` / `progressive` now

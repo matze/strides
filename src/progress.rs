@@ -27,6 +27,7 @@ struct Rendering<'a> {
     line: Line<'a>,
     ticks: Ticks<'a>,
     spinner_frame: Option<&'a str>,
+    spinner_tick: u64,
     spinner_style: Style,
     annotation_style: Style,
     output: Output,
@@ -107,6 +108,7 @@ impl<'a> Progress<'a> {
             line,
             ticks,
             spinner_frame: None,
+            spinner_tick: 0,
             spinner_style: self.spinner_style_override.unwrap_or_default(),
             annotation_style: self.annotation_style_override.unwrap_or_default(),
             output,
@@ -121,6 +123,7 @@ impl<'a> Progress<'a> {
         if let RenderingState::Active(r) = &mut self.rendering {
             if let Poll::Ready(frame) = Pin::new(&mut r.ticks).poll_next(cx) {
                 r.spinner_frame = frame;
+                r.spinner_tick = r.spinner_tick.wrapping_add(1);
                 return true;
             }
         }
@@ -139,6 +142,7 @@ impl<'a> Progress<'a> {
         };
         let frame = FrameContext {
             spinner_frame: r.spinner_frame,
+            spinner_tick: r.spinner_tick,
             elapsed,
             show_elapsed,
             spinner_style: r.spinner_style,

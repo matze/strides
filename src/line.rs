@@ -18,6 +18,7 @@ use crate::Theme;
 /// elapsed time, and style overrides.
 pub(crate) struct FrameContext<'a> {
     pub spinner_frame: Option<&'a str>,
+    pub spinner_tick: u64,
     pub elapsed: Duration,
     pub show_elapsed: bool,
     pub spinner_style: Style,
@@ -50,6 +51,7 @@ impl<'a> Line<'a> {
     ) -> &str {
         let ctx = RenderContext {
             spinner: frame.spinner_frame,
+            spinner_tick: frame.spinner_tick,
             elapsed: frame.elapsed,
             show_elapsed: frame.show_elapsed,
             bar: &self.bar,

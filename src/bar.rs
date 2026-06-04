@@ -19,6 +19,37 @@ use std::fmt::{self, Display, Formatter, Write as _};
 
 use owo_colors::OwoColorize;
 
+use crate::color::{push_gradient_run, Gradient};
+
+/// How a [`Gradient`] is mapped across a bar's cells.
+///
+/// Picks what the gradient position `t` means for cell `i` of a run. [`Axis::Width`] is the
+/// general case; [`Axis::Fraction`] reduces to a single solid color that depends on the fill
+/// level (a gauge).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Axis {
+    /// `t = position / (width - 1)`: colors are fixed to absolute column, so the gradient stays
+    /// put and the fill reveals more of it as it grows.
+    Width,
+    /// `t = fill fraction`: every cell shares one color derived from how full the bar is, e.g.
+    /// green when nearly empty shading to red when full.
+    Fraction,
+}
+
+impl Axis {
+    /// Gradient position for cell `i` of a run starting at absolute column `offset` in a bar of
+    /// `width` columns whose fill fraction is `fraction`.
+    fn position(self, i: usize, offset: usize, width: usize, fraction: f64) -> f64 {
+        match self {
+            Axis::Fraction => fraction,
+            Axis::Width => {
+                let denom = width.saturating_sub(1).max(1) as f64;
+                (offset + i) as f64 / denom
+            }
+        }
+    }
+}
+
 /// Pre-defined progress bar styles. Each constant is a ready-to-use [`Bar`] that can be
 /// further customized with the builder methods on [`Bar`].
 pub mod styles {
@@ -69,6 +100,10 @@ pub struct Bar<'a> {
     filled_style: Option<owo_colors::Style>,
     /// Style applied to the empty portion of the bar.
     empty_style: Option<owo_colors::Style>,
+    /// Gradient and mapping for the filled portion; takes precedence over `filled_style`.
+    filled_gradient: Option<(Gradient, Axis)>,
+    /// Gradient and mapping for the empty portion; takes precedence over `empty_style`.
+    empty_gradient: Option<(Gradient, Axis)>,
 }
 
 impl Bar<'_> {
@@ -83,6 +118,8 @@ impl Bar<'_> {
             right_border: None,
             filled_style: None,
             empty_style: None,
+            filled_gradient: None,
+            empty_gradient: None,
         }
     }
 
@@ -95,6 +132,8 @@ impl Bar<'_> {
             right_border: None,
             filled_style: None,
             empty_style: None,
+            filled_gradient: None,
+            empty_gradient: None,
         }
     }
 
@@ -110,23 +149,17 @@ impl Bar<'_> {
     /// Like [`render`](Self::render) but appends into `buf` instead of allocating a new `String`.
     /// Use this on hot paths where the same buffer can be cleared and reused across frames.
     pub fn render_into(&self, buf: &mut String, width: usize, completed: f64) {
-        let completed = (completed * width as f64) as usize;
-        let remaining = width.saturating_sub(completed);
+        let fraction = completed.clamp(0.0, 1.0);
+        let filled = (fraction * width as f64) as usize;
+        let remaining = width.saturating_sub(filled);
 
         if let Some(left) = self.left_border {
             buf.push_str(left);
         }
 
         if let Some(c) = self.complete {
-            let run = CharRun::new(c, completed);
-            match self.filled_style {
-                Some(style) => {
-                    let _ = write!(buf, "{}", run.style(style));
-                }
-                None => {
-                    let _ = write!(buf, "{run}");
-                }
-            }
+            // The filled run occupies columns `0..filled`.
+            self.render_run(buf, c, filled, 0, width, fraction, self.filled_gradient, self.filled_style);
         }
 
         if let Some(in_between) = self.in_between {
@@ -134,19 +167,46 @@ impl Bar<'_> {
         }
 
         if let Some(c) = self.empty {
-            let run = CharRun::new(c, remaining);
-            match self.empty_style {
-                Some(style) => {
-                    let _ = write!(buf, "{}", run.style(style));
-                }
-                None => {
-                    let _ = write!(buf, "{run}");
-                }
-            }
+            // The empty run continues at column `filled`.
+            self.render_run(buf, c, remaining, filled, width, fraction, self.empty_gradient, self.empty_style);
         }
 
         if let Some(right) = self.right_border {
             buf.push_str(right);
+        }
+    }
+
+    /// Render one run of `count` copies of `ch` starting at absolute column `offset`. A gradient,
+    /// when present, colors per cell and takes precedence over a solid `style`.
+    #[allow(clippy::too_many_arguments)]
+    fn render_run(
+        &self,
+        buf: &mut String,
+        ch: char,
+        count: usize,
+        offset: usize,
+        width: usize,
+        fraction: f64,
+        gradient: Option<(Gradient, Axis)>,
+        style: Option<owo_colors::Style>,
+    ) {
+        match gradient {
+            Some((gradient, axis)) => {
+                push_gradient_run(buf, ch, count, |i| {
+                    gradient.sample(axis.position(i, offset, width, fraction))
+                });
+            }
+            None => {
+                let run = CharRun::new(ch, count);
+                match style {
+                    Some(style) => {
+                        let _ = write!(buf, "{}", run.style(style));
+                    }
+                    None => {
+                        let _ = write!(buf, "{run}");
+                    }
+                }
+            }
         }
     }
 
@@ -173,6 +233,21 @@ impl Bar<'_> {
     /// Style the empty portion of the bar.
     pub const fn with_empty_style(mut self, style: owo_colors::Style) -> Self {
         self.empty_style = Some(style);
+        self
+    }
+
+    /// Color the filled portion with a [`Gradient`], mapped across the bar by `axis`. Takes
+    /// precedence over [`with_filled_style`](Self::with_filled_style) when both are set. Output
+    /// downgrades to a 256-color approximation or to no color depending on terminal support.
+    pub const fn with_filled_gradient(mut self, gradient: Gradient, axis: Axis) -> Self {
+        self.filled_gradient = Some((gradient, axis));
+        self
+    }
+
+    /// Color the empty portion with a [`Gradient`], mapped across the bar by `axis`. Takes
+    /// precedence over [`with_empty_style`](Self::with_empty_style) when both are set.
+    pub const fn with_empty_gradient(mut self, gradient: Gradient, axis: Axis) -> Self {
+        self.empty_gradient = Some((gradient, axis));
         self
     }
 }

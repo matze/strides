@@ -216,6 +216,7 @@
 //! [`Bar`]: crate::bar::Bar
 
 pub mod bar;
+pub mod color;
 pub mod future;
 pub mod layout;
 pub mod progressive;
@@ -228,7 +229,8 @@ pub(crate) mod line;
 pub(crate) mod progress;
 pub(crate) mod state;
 
-pub use layout::{Layout, RenderContext, Segment};
+pub use color::{Gradient, Rgb};
+pub use layout::{Layout, RenderContext, Segment, SpinnerFill};
 pub use progressive::{Progressive, ProgressiveFuture, ProgressiveStream};
 pub use term::Output;
 pub use theme::Theme;

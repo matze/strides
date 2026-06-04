@@ -64,6 +64,7 @@ pub struct Group<'a, O> {
     theme: Theme<'a>,
     ticks: Ticks<'a>,
     spinner_frame: Option<&'a str>,
+    spinner_tick: u64,
     spinner_style: Style,
     annotation_style: Style,
     with_elapsed_time: bool,
@@ -88,6 +89,7 @@ impl<'a, O> Group<'a, O> {
             theme,
             ticks,
             spinner_frame: None,
+            spinner_tick: 0,
             spinner_style: Style::new(),
             annotation_style: Style::new(),
             with_elapsed_time: false,
@@ -163,6 +165,7 @@ where
 
         if let Poll::Ready(frame) = Pin::new(&mut this.ticks).poll_next(cx) {
             this.spinner_frame = frame;
+            this.spinner_tick = this.spinner_tick.wrapping_add(1);
             this.dirty = true;
         }
 
@@ -191,6 +194,7 @@ where
                     let item = slot.work.as_ref().get_ref();
                     let frame = FrameContext {
                         spinner_frame: this.spinner_frame,
+                        spinner_tick: this.spinner_tick,
                         elapsed,
                         show_elapsed: item.show_elapsed_time() || this.with_elapsed_time,
                         spinner_style: item.spinner_style().unwrap_or(this.spinner_style),

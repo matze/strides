@@ -9,6 +9,11 @@
   still splits a string into per-character frames, so single-glyph spinners are
   unchanged; only code that consumed the `Ticks` stream's items directly needs
   to adapt.
+- `RenderContext` gained a `spinner_tick: u64` field (the spinner's tick count,
+  driving pulsating gradients), and the `Segment::Spinner` variant gained a
+  `gradient` field. Code that constructs `RenderContext` or matches/builds
+  `Segment::Spinner` directly needs to add these; prefer the `Segment::spinner()`
+  constructor and the `with_*` builders, which are unaffected.
 
 ### Added
 
@@ -17,6 +22,19 @@
   styles `KNIGHT` (Knight Rider / K.I.T.T. scanner), `KNIGHT_COMET`, `BOUNCE`,
   `BAR` and `PULSE` are built on it. See the `gallery` example for a live demo of
   every spinner and progress-bar style.
+- A `color` module with `Rgb` and `Gradient` (re-exported at the crate root).
+  `Gradient::new(&[(pos, Rgb)])` defines color stops interpolated in HSL space.
+  Output adapts to the terminal: 24-bit truecolor when `COLORTERM` advertises
+  it, a 256-color approximation otherwise, and no escapes at all when color is
+  unsupported or disabled via `NO_COLOR`.
+- `Bar::with_filled_gradient` / `with_empty_gradient` color a bar per cell from a
+  `Gradient`, mapped by a `bar::Axis`: `Width` (fixed to column, revealed as the
+  bar fills) or `Fraction` (one color keyed to the fill level, a gauge).
+- `Segment::with_gradient(gradient, fill)` colors a spinner, with `SpinnerFill`
+  selecting `Cells` (spread across a multi-cell band, so a scanner changes hue as
+  it sweeps) or `Pulse(period)` (one color breathing over the spinner's tick
+  count, for single-glyph spinners). The `gallery` example demos both, plus all
+  three bar axes.
 
 ## 1.0.0-rc.3
 

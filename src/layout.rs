@@ -27,6 +27,7 @@ use std::time::Duration;
 use owo_colors::{OwoColorize as _, Style};
 
 use crate::bar::Bar;
+use crate::color::{push_gradient_chars, Gradient};
 
 /// Values available to a [`Segment`] at render time.
 ///
@@ -35,6 +36,9 @@ use crate::bar::Bar;
 pub struct RenderContext<'a> {
     /// Current spinner frame, if the spinner has ticked at least once.
     pub spinner: Option<&'a str>,
+    /// Number of spinner ticks so far, used to drive a pulsating gradient. Advances in lockstep
+    /// with [`spinner`](Self::spinner) — no separate clock.
+    pub spinner_tick: u64,
     /// Time elapsed since rendering started.
     pub elapsed: Duration,
     /// Whether the elapsed time should be rendered at all.
@@ -61,6 +65,21 @@ pub struct RenderContext<'a> {
     pub annotation_style: Style,
 }
 
+/// How a [`Gradient`] fills a spinner, set on a [`Spinner`](Segment::Spinner) segment via
+/// [`Segment::with_gradient`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SpinnerFill {
+    /// Spread the gradient across the frame's cells, left to right. Best for multi-cell bands such
+    /// as a scanner, whose lit cell takes on the color of wherever it currently sits.
+    Cells,
+    /// Pulse the whole frame through the gradient over time: every cell shares one color sampled
+    /// by a triangle wave over the spinner's tick count, completing a full breathe every
+    /// `2 * period` ticks. Best for single-glyph spinners, which have no spatial extent to spread
+    /// across. Drawn from [`RenderContext::spinner_tick`], so it breathes in lockstep with the
+    /// animation interval rather than a separate clock.
+    Pulse(u32),
+}
+
 /// A single renderable element of a [`Layout`].
 ///
 /// Construct segments with the associated functions ([`Segment::spinner`], [`Segment::elapsed`],
@@ -68,10 +87,14 @@ pub struct RenderContext<'a> {
 /// not affect returns that segment unchanged.
 #[derive(Clone)]
 pub enum Segment {
-    /// The spinner character.
+    /// The spinner frame.
     Spinner {
-        /// Explicit style; falls back to [`RenderContext::spinner_style`] when `None`.
+        /// Explicit style; falls back to [`RenderContext::spinner_style`] when `None`. Ignored
+        /// when `gradient` is set.
         style: Option<Style>,
+        /// Optional gradient and how it fills the spinner, taking precedence over `style`. Lets a
+        /// multi-cell spinner sweep through colors or a single-glyph one pulsate.
+        gradient: Option<(Gradient, SpinnerFill)>,
     },
     /// Elapsed time, rendered as `1.23s` with an optional border such as `[` … `]`.
     Elapsed {
@@ -111,9 +134,12 @@ pub enum Segment {
 }
 
 impl Segment {
-    /// A spinner segment with no explicit style.
+    /// A spinner segment with no explicit style or gradient.
     pub const fn spinner() -> Self {
-        Segment::Spinner { style: None }
+        Segment::Spinner {
+            style: None,
+            gradient: None,
+        }
     }
 
     /// An elapsed-time segment: no border, two digits of precision.
@@ -174,7 +200,10 @@ impl Segment {
     /// [`Label`](Segment::Label) segment. Other segments are returned unchanged.
     pub fn with_style(self, style: Style) -> Self {
         match self {
-            Segment::Spinner { .. } => Segment::Spinner { style: Some(style) },
+            Segment::Spinner { gradient, .. } => Segment::Spinner {
+                style: Some(style),
+                gradient,
+            },
             Segment::Elapsed {
                 border, precision, ..
             } => Segment::Elapsed {
@@ -185,6 +214,19 @@ impl Segment {
             Segment::Label { width, .. } => Segment::Label {
                 style: Some(style),
                 width,
+            },
+            other => other,
+        }
+    }
+
+    /// Color a [`Spinner`](Segment::Spinner) segment with a [`Gradient`], filled per `fill`
+    /// ([`SpinnerFill::Cells`] to spread across the frame, [`SpinnerFill::Pulse`] to breathe over
+    /// time). Takes precedence over an explicit style. Other segments are returned unchanged.
+    pub fn with_gradient(self, gradient: Gradient, fill: SpinnerFill) -> Self {
+        match self {
+            Segment::Spinner { style, .. } => Segment::Spinner {
+                style,
+                gradient: Some((gradient, fill)),
             },
             other => other,
         }
@@ -236,10 +278,25 @@ impl Segment {
 
     fn render(&self, ctx: &RenderContext, buf: &mut String) {
         match self {
-            Segment::Spinner { style } => {
+            Segment::Spinner { style, gradient } => {
                 if let Some(frame) = ctx.spinner {
-                    let style = style.unwrap_or(ctx.spinner_style);
-                    let _ = write!(buf, "{}", frame.style(style));
+                    match gradient {
+                        Some((gradient, SpinnerFill::Cells)) => {
+                            // Spread the gradient across the frame's cells, left to right.
+                            let denom = frame.chars().count().saturating_sub(1).max(1) as f64;
+                            push_gradient_chars(buf, frame, |i| gradient.sample(i as f64 / denom));
+                        }
+                        Some((gradient, SpinnerFill::Pulse(period))) => {
+                            // Sample one color by a triangle wave over the tick count and apply it
+                            // uniformly, so the whole frame breathes in step with the animation.
+                            let color = gradient.sample(triangle(ctx.spinner_tick, *period));
+                            push_gradient_chars(buf, frame, |_| color);
+                        }
+                        None => {
+                            let style = style.unwrap_or(ctx.spinner_style);
+                            let _ = write!(buf, "{}", frame.style(style));
+                        }
+                    }
                 }
             }
             Segment::Elapsed {
@@ -344,6 +401,18 @@ impl Segment {
     }
 }
 
+/// Triangle wave in `0.0..=1.0` over `2 * period` ticks: rises for `period` ticks, then falls back
+/// for `period`. Used to drive [`SpinnerFill::Pulse`] from the spinner tick count.
+fn triangle(tick: u64, period: u32) -> f64 {
+    let period = period.max(1) as u64;
+    let phase = tick % (2 * period);
+    if phase <= period {
+        phase as f64 / period as f64
+    } else {
+        (2 * period - phase) as f64 / period as f64
+    }
+}
+
 const BYTE_UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
 
 fn format_bytes_iec(n: u64, buf: &mut String) {
@@ -389,7 +458,10 @@ pub struct Layout {
 }
 
 static DEFAULT_SEGMENTS: [Segment; 5] = [
-    Segment::Spinner { style: None },
+    Segment::Spinner {
+        style: None,
+        gradient: None,
+    },
     Segment::Elapsed {
         style: None,
         border: None,
@@ -487,6 +559,7 @@ mod tests {
     fn context() -> RenderContext<'static> {
         RenderContext {
             spinner: None,
+            spinner_tick: 0,
             elapsed: Duration::from_millis(1500),
             show_elapsed: false,
             bar: EMPTY_BAR,
@@ -553,6 +626,58 @@ mod tests {
         let mut buf = String::new();
         Layout::new(&[]).with_segment(segment).render(ctx, &mut buf);
         buf
+    }
+
+    /// Drop ANSI SGR escapes (`\x1b[...m`) so a rendered string can be compared by visible glyphs
+    /// regardless of the ambient terminal's color support.
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::new();
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                for c in chars.by_ref() {
+                    if c == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn spinner_gradient_preserves_frame_glyphs() {
+        use crate::color::{Gradient, Rgb};
+
+        let mut ctx = context();
+        ctx.spinner = Some("▒▓█");
+        let gradient = Gradient::new(&[(0.0, Rgb(0, 255, 0)), (1.0, Rgb(255, 0, 0))]);
+
+        // Whatever the terminal color level, the visible glyphs are the frame, in order — for both
+        // the spatial and the pulsing fill.
+        let cells = render(Segment::spinner().with_gradient(gradient, SpinnerFill::Cells), &ctx);
+        assert_eq!(strip_ansi(&cells), "▒▓█");
+
+        ctx.spinner_tick = 3;
+        let pulse = render(
+            Segment::spinner().with_gradient(gradient, SpinnerFill::Pulse(8)),
+            &ctx,
+        );
+        assert_eq!(strip_ansi(&pulse), "▒▓█");
+    }
+
+    #[test]
+    fn triangle_wave_rises_and_falls() {
+        // Over a period of 4: 0,1,2,3,4 rising to the peak, then back down to 0 at 8.
+        assert_eq!(triangle(0, 4), 0.0);
+        assert_eq!(triangle(2, 4), 0.5);
+        assert_eq!(triangle(4, 4), 1.0);
+        assert_eq!(triangle(6, 4), 0.5);
+        assert_eq!(triangle(8, 4), 0.0);
+        // A zero period does not divide by zero.
+        assert!(triangle(5, 0).is_finite());
     }
 
     #[test]

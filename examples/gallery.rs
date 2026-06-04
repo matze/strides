@@ -4,18 +4,30 @@
 //! Spinners are driven through the public [`spinner`](strides::spinner) API: every style yields its
 //! own [`Ticks`](strides::spinner::Ticks) stream. Progress bars are driven through
 //! [`Bar::render`](strides::bar::Bar::render) against a fraction that sweeps back and forth, paced
-//! by a timer. All of those event sources are merged into one stream, and the whole block is
-//! repainted in place whenever anything advances. The example writes the few VT100 escapes it needs
-//! (hide/show cursor, clear line, cursor up/down) itself, since those terminal helpers are internal
-//! to the crate.
+//! by a timer. Gradient spinners go through the real layout path —
+//! [`Segment::spinner().with_gradient(..)`](strides::layout::Segment::with_gradient) rendered via a
+//! [`RenderContext`](strides::layout::RenderContext). All of those event sources are merged into one
+//! stream, and the whole block is repainted in place whenever anything advances. The example writes
+//! the few VT100 escapes it needs (hide/show cursor, clear line, cursor up/down) itself, since those
+//! terminal helpers are internal to the crate.
 
 use std::io::Write as _;
 use std::time::{Duration, Instant};
 
 use futures_concurrency::stream::Merge as _;
 use futures_lite::{future, StreamExt as _};
-use strides::bar::{self, Bar};
+use owo_colors::Style;
+use strides::bar::{self, Axis, Bar};
+use strides::color::{Gradient, Rgb};
+use strides::layout::{Layout, RenderContext, Segment, SpinnerFill};
 use strides::spinner::{self, Spinner};
+
+/// Green→red ramp, interpolated through yellow/orange in HSL space.
+const GREEN_RED: Gradient = Gradient::new(&[(0.0, Rgb(0, 200, 0)), (1.0, Rgb(220, 0, 0))]);
+
+/// One hue breathing from dim to bright — a lightness pulse for a twinkling star. Both stops are
+/// the same blue, so the pulse varies brightness rather than cycling color.
+const STAR_PULSE: Gradient = Gradient::new(&[(0.0, Rgb(40, 50, 90)), (1.0, Rgb(180, 210, 255))]);
 
 /// How long the gallery animates before restoring the terminal and exiting.
 const RUN_FOR: Duration = Duration::from_secs(8);
@@ -33,8 +45,36 @@ const BAR_STEPS: u32 = 24;
 enum Tick {
     /// Spinner on `row` advanced to `frame`.
     Spinner(usize, &'static str),
+    /// Gradient spinner on `row` advanced to `frame`.
+    GradientSpinner(usize, &'static str),
     /// The progress-bar sweep should advance one step.
     Bar,
+}
+
+/// Render a single spinner `frame` colored by `gradient` and filled per `fill`, going through the
+/// real layout path so the example exercises [`Segment::with_gradient`] rather than reimplementing
+/// coloring. `tick` drives the pulse for [`SpinnerFill::Pulse`] and is ignored otherwise.
+fn gradient_spinner(gradient: Gradient, fill: SpinnerFill, frame: &str, tick: u64, bar: &Bar) -> String {
+    let layout = Layout::from_segments([Segment::spinner().with_gradient(gradient, fill)]);
+    let ctx = RenderContext {
+        spinner: Some(frame),
+        spinner_tick: tick,
+        elapsed: Duration::ZERO,
+        show_elapsed: false,
+        bar,
+        bar_width: 0,
+        progress: None,
+        bytes_done: 0,
+        bytes_total: None,
+        rate: None,
+        label: None,
+        message: None,
+        spinner_style: Style::new(),
+        annotation_style: Style::new(),
+    };
+    let mut buf = String::new();
+    layout.render(&ctx, &mut buf);
+    buf
 }
 
 fn main() {
@@ -73,27 +113,64 @@ fn main() {
         ("EQUALS", bar::styles::EQUALS),
     ];
 
-    // Names are left-aligned to a shared width so spinners and bars line up in one column.
+    // The same SHADED bar colored by a green→red gradient, one row per mapping axis.
+    let gradient_bars: &[(&str, Bar)] = &[
+        ("WIDTH", bar::styles::SHADED.with_filled_gradient(GREEN_RED, Axis::Width)),
+        ("FRACTION", bar::styles::SHADED.with_filled_gradient(GREEN_RED, Axis::Fraction)),
+    ];
+
+    // Gradient-colored spinners. `Cells` spreads the gradient across a multi-cell band, so the
+    // KNIGHT scanner changes hue as it sweeps. `Pulse` breathes one color over time, sampled by the
+    // spinner's tick count: STAR twinkles in place — no spatial motion — so the lightness pulse
+    // reads as the whole glyph brightening and dimming.
+    let gradient_spinners: &[(&str, Spinner, Gradient, SpinnerFill)] = &[
+        ("KNIGHT", spinner::styles::KNIGHT, GREEN_RED, SpinnerFill::Cells),
+        ("STAR", spinner::styles::STAR, STAR_PULSE, SpinnerFill::Pulse(8)),
+    ];
+
+    // Names are left-aligned to a shared width so every row lines up in one column.
     let name_width = spinners
         .iter()
         .map(|(name, _)| name.len())
         .chain(bars.iter().map(|(name, _)| name.len()))
+        .chain(gradient_bars.iter().map(|(name, _)| name.len()))
+        .chain(gradient_spinners.iter().map(|(name, _, _, _)| name.len()))
         .max()
         .unwrap_or(0);
 
-    // The most recent frame for each spinner row; blank until that spinner first ticks.
+    // The most recent frame for each (plain / gradient) spinner row; blank until it first ticks.
     let mut frames = vec![""; spinners.len()];
+    let mut gradient_frames = vec![""; gradient_spinners.len()];
+    // Per-row tick count for the gradient spinners, advanced on each tick to drive the pulse.
+    let mut gradient_ticks = vec![0u64; gradient_spinners.len()];
     // Sweep position for the progress bars, advanced on every `Tick::Bar`.
     let mut bar_phase: u32 = 0;
 
-    // The block is a header, the spinner rows, a blank line, a header and the bar rows.
-    let total_lines = 2 + spinners.len() + 1 + bars.len();
+    // Each section is a header plus its rows; sections after the first add a leading blank line.
+    let total_lines = 1
+        + spinners.len()
+        + 2
+        + bars.len()
+        + 2
+        + gradient_bars.len()
+        + 2
+        + gradient_spinners.len();
 
     // Tag each spinner's frames with its row index; the bar timer contributes the sweep ticks.
     let spinner_ticks = spinners
         .iter()
         .enumerate()
         .map(|(row, (_, spinner))| spinner.ticks().map(move |frame| Tick::Spinner(row, frame)))
+        .collect::<Vec<_>>()
+        .merge();
+    let gradient_spinner_ticks = gradient_spinners
+        .iter()
+        .enumerate()
+        .map(|(row, (_, spinner, _, _))| {
+            spinner
+                .ticks()
+                .map(move |frame| Tick::GradientSpinner(row, frame))
+        })
         .collect::<Vec<_>>()
         .merge();
     let bar_ticks = async_io::Timer::interval(BAR_PERIOD).map(|_| Tick::Bar);
@@ -107,12 +184,20 @@ fn main() {
         print!("\x1b[{total_lines}A");
         let _ = std::io::stdout().flush();
 
+        // A throwaway bar for the RenderContext used to color gradient spinners; the spinner-only
+        // layout never renders it.
+        let demo_bar = Bar::new(' ', ' ');
+
         let deadline = Instant::now() + RUN_FOR;
-        let mut events = (spinner_ticks, bar_ticks).merge();
+        let mut events = (spinner_ticks, gradient_spinner_ticks, bar_ticks).merge();
 
         while let Some(tick) = events.next().await {
             match tick {
                 Tick::Spinner(row, frame) => frames[row] = frame,
+                Tick::GradientSpinner(row, frame) => {
+                    gradient_frames[row] = frame;
+                    gradient_ticks[row] += 1;
+                }
                 Tick::Bar => bar_phase += 1,
             }
 
@@ -136,6 +221,22 @@ fn main() {
             line("");
             line("\x1b[1mProgress bars\x1b[0m");
             for (name, bar) in bars {
+                line(&format!(
+                    "  {name:<name_width$}  {}",
+                    bar.render(BAR_WIDTH, completed)
+                ));
+            }
+            line("");
+            line("\x1b[1mGradient spinners\x1b[0m");
+            for (row, (name, _, gradient, fill)) in gradient_spinners.iter().enumerate() {
+                line(&format!(
+                    "  {name:<name_width$}  {}",
+                    gradient_spinner(*gradient, *fill, gradient_frames[row], gradient_ticks[row], &demo_bar)
+                ));
+            }
+            line("");
+            line("\x1b[1mGradient bars\x1b[0m");
+            for (name, bar) in gradient_bars {
                 line(&format!(
                     "  {name:<name_width$}  {}",
                     bar.render(BAR_WIDTH, completed)

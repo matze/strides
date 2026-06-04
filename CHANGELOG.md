@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- A spinner frame is now a string slice rather than a single character, so
+  `Spinner::ticks()` yields `&str` instead of `char`. `Spinner::new("◜◝◞◟")`
+  still splits a string into per-character frames, so single-glyph spinners are
+  unchanged; only code that consumed the `Ticks` stream's items directly needs
+  to adapt.
+
+### Added
+
+- `Spinner::frames` builds a spinner from explicit multi-character frames, one
+  `&str` per frame, for animations that span several columns. New multi-cell
+  styles `KNIGHT` (Knight Rider / K.I.T.T. scanner), `KNIGHT_COMET`, `BOUNCE`,
+  `BAR` and `PULSE` are built on it. See the `gallery` example for a live demo of
+  every spinner and progress-bar style.
 
 ## 1.0.0-rc.3
 

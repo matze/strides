@@ -33,8 +33,8 @@ use crate::bar::Bar;
 /// Call sites fill this in once per frame; segments read from it. Fields that hold an [`Option`]
 /// signal absence — the corresponding segment then renders nothing.
 pub struct RenderContext<'a> {
-    /// Current spinner character, if the spinner has ticked at least once.
-    pub spinner: Option<char>,
+    /// Current spinner frame, if the spinner has ticked at least once.
+    pub spinner: Option<&'a str>,
     /// Time elapsed since rendering started.
     pub elapsed: Duration,
     /// Whether the elapsed time should be rendered at all.
@@ -237,9 +237,9 @@ impl Segment {
     fn render(&self, ctx: &RenderContext, buf: &mut String) {
         match self {
             Segment::Spinner { style } => {
-                if let Some(ch) = ctx.spinner {
+                if let Some(frame) = ctx.spinner {
                     let style = style.unwrap_or(ctx.spinner_style);
-                    let _ = write!(buf, "{}", ch.style(style));
+                    let _ = write!(buf, "{}", frame.style(style));
                 }
             }
             Segment::Elapsed {

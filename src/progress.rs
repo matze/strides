@@ -26,7 +26,7 @@ use crate::Theme;
 struct Rendering<'a> {
     line: Line<'a>,
     ticks: Ticks<'a>,
-    spinner_char: Option<char>,
+    spinner_frame: Option<&'a str>,
     spinner_style: Style,
     annotation_style: Style,
     output: Output,
@@ -106,7 +106,7 @@ impl<'a> Progress<'a> {
         self.rendering = RenderingState::Active(Rendering {
             line,
             ticks,
-            spinner_char: None,
+            spinner_frame: None,
             spinner_style: self.spinner_style_override.unwrap_or_default(),
             annotation_style: self.annotation_style_override.unwrap_or_default(),
             output,
@@ -119,8 +119,8 @@ impl<'a> Progress<'a> {
     /// Advance the spinner. Returns `true` when it ticked, signalling that a repaint is warranted.
     pub(crate) fn tick(&mut self, cx: &mut Context<'_>) -> bool {
         if let RenderingState::Active(r) = &mut self.rendering {
-            if let Poll::Ready(ch) = Pin::new(&mut r.ticks).poll_next(cx) {
-                r.spinner_char = ch;
+            if let Poll::Ready(frame) = Pin::new(&mut r.ticks).poll_next(cx) {
+                r.spinner_frame = frame;
                 return true;
             }
         }
@@ -138,7 +138,7 @@ impl<'a> Progress<'a> {
             (Duration::ZERO, false)
         };
         let frame = FrameContext {
-            spinner_char: r.spinner_char,
+            spinner_frame: r.spinner_frame,
             elapsed,
             show_elapsed,
             spinner_style: r.spinner_style,

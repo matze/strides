@@ -38,7 +38,7 @@ pub struct Group<'a, I> {
     buffer: VecDeque<I>,
     theme: Theme<'a>,
     ticks: Ticks<'a>,
-    spinner_char: Option<char>,
+    spinner_frame: Option<&'a str>,
     spinner_style: Style,
     annotation_style: Style,
     with_elapsed_time: bool,
@@ -62,7 +62,7 @@ impl<'a, I> Group<'a, I> {
             buffer: VecDeque::new(),
             theme,
             ticks,
-            spinner_char: None,
+            spinner_frame: None,
             spinner_style: Style::new(),
             annotation_style: Style::new(),
             with_elapsed_time: false,
@@ -129,8 +129,8 @@ where
 
         this.start.get_or_insert_with(Instant::now);
 
-        if let Poll::Ready(ch) = Pin::new(&mut this.ticks).poll_next(cx) {
-            this.spinner_char = ch;
+        if let Poll::Ready(frame) = Pin::new(&mut this.ticks).poll_next(cx) {
+            this.spinner_frame = frame;
             this.dirty = true;
         }
 
@@ -164,7 +164,7 @@ where
                     let _ = clear_line(stdout);
                     let item = slot.work.as_ref().get_ref();
                     let frame = FrameContext {
-                        spinner_char: this.spinner_char,
+                        spinner_frame: this.spinner_frame,
                         elapsed,
                         show_elapsed: item.show_elapsed_time() || this.with_elapsed_time,
                         spinner_style: item.spinner_style().unwrap_or(this.spinner_style),

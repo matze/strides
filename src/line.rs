@@ -14,10 +14,10 @@ use crate::progressive::Progressive;
 use crate::term::{self, clear_line, Output};
 use crate::Theme;
 
-/// Per-frame rendering inputs that are not part of [`Progressive`]. The spinner character, the
+/// Per-frame rendering inputs that are not part of [`Progressive`]. The spinner frame, the
 /// elapsed time, and style overrides.
-pub(crate) struct FrameContext {
-    pub spinner_char: Option<char>,
+pub(crate) struct FrameContext<'a> {
+    pub spinner_frame: Option<&'a str>,
     pub elapsed: Duration,
     pub show_elapsed: bool,
     pub spinner_style: Style,
@@ -46,10 +46,10 @@ impl<'a> Line<'a> {
     pub(crate) fn render_into<'b, P: Progressive<'b> + ?Sized>(
         &mut self,
         item: &P,
-        frame: &FrameContext,
+        frame: &FrameContext<'_>,
     ) -> &str {
         let ctx = RenderContext {
-            spinner: frame.spinner_char,
+            spinner: frame.spinner_frame,
             elapsed: frame.elapsed,
             show_elapsed: frame.show_elapsed,
             bar: &self.bar,
@@ -73,7 +73,7 @@ impl<'a> Line<'a> {
     pub(crate) fn standalone_render<'b, P: Progressive<'b> + ?Sized>(
         &mut self,
         item: &P,
-        frame: &FrameContext,
+        frame: &FrameContext<'_>,
         output: Output,
         is_tty: bool,
     ) {

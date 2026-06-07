@@ -264,8 +264,7 @@ fn push_sgr(buf: &mut String, color: Rgb, level: ColorLevel) {
 mod tests {
     use super::*;
 
-    const GREEN_RED: Gradient =
-        Gradient::new(&[(0.0, Rgb(0, 255, 0)), (1.0, Rgb(255, 0, 0))]);
+    const GREEN_RED: Gradient = Gradient::new(&[(0.0, Rgb(0, 255, 0)), (1.0, Rgb(255, 0, 0))]);
 
     #[test]
     fn sample_hits_endpoints_exactly() {
@@ -338,9 +337,12 @@ mod tests {
     fn gradient_chars_colors_each_glyph() {
         let mut buf = String::new();
         let colors = [Rgb(1, 0, 0), Rgb(2, 0, 0)];
-        push_cells(&mut buf, ColorLevel::TrueColor, "ab".chars().enumerate(), |i| {
-            colors[i]
-        });
+        push_cells(
+            &mut buf,
+            ColorLevel::TrueColor,
+            "ab".chars().enumerate(),
+            |i| colors[i],
+        );
         assert_eq!(buf, "\x1b[38;2;1;0;0ma\x1b[38;2;2;0;0mb\x1b[0m");
     }
 

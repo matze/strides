@@ -29,6 +29,24 @@ const GREEN_RED: Gradient = Gradient::new(&[(0.0, Rgb(0, 200, 0)), (1.0, Rgb(220
 /// the same blue, so the pulse varies brightness rather than cycling color.
 const STAR_PULSE: Gradient = Gradient::new(&[(0.0, Rgb(40, 50, 90)), (1.0, Rgb(180, 210, 255))]);
 
+/// Warm orange shimmer: dim base with a bright spotlight sweeping across the text. The gradient
+/// maps t=0 (far from the spotlight) to dim orange, and t=1 (at the spotlight center) to bright orange.
+const ORANGE_SHIMMER: Gradient = Gradient::new(&[(0.0, Rgb(180, 90, 0)), (1.0, Rgb(255, 180, 50))]);
+
+/// A status word that shimmers in place: a single, unchanging frame, so nothing animates but the
+/// bright spotlight that [`SpinnerFill::Sweep`] washes across the letters, left to right and back.
+/// Pair it with [`ORANGE_SHIMMER`] for the "vibeing…" look — the whole word orange, individual
+/// letters lifting brighter as the highlight passes.
+const VIBING: Spinner = Spinner::frames(&["vibeing…"]);
+
+/// Purple breathing from dim to bright. Both stops share a hue, so [`SpinnerFill::Pulse`] varies
+/// the whole word's brightness rather than cycling color.
+const PURPLE_PULSE: Gradient = Gradient::new(&[(0.0, Rgb(70, 40, 110)), (1.0, Rgb(190, 130, 255))]);
+
+/// Like [`VIBING`], a single unchanging frame, but driven by [`SpinnerFill::Pulse`]: every letter
+/// shares one color, so the whole "spinning…" word breathes brighter and dimmer in unison.
+const SPINNING: Spinner = Spinner::frames(&["spinning…"]);
+
 /// How long the gallery animates before restoring the terminal and exiting.
 const RUN_FOR: Duration = Duration::from_secs(8);
 
@@ -54,7 +72,13 @@ enum Tick {
 /// Render a single spinner `frame` colored by `gradient` and filled per `fill`, going through the
 /// real layout path so the example exercises [`Segment::with_gradient`] rather than reimplementing
 /// coloring. `tick` drives the pulse for [`SpinnerFill::Pulse`] and is ignored otherwise.
-fn gradient_spinner(gradient: Gradient, fill: SpinnerFill, frame: &str, tick: u64, bar: &Bar) -> String {
+fn gradient_spinner(
+    gradient: Gradient,
+    fill: SpinnerFill,
+    frame: &str,
+    tick: u64,
+    bar: &Bar,
+) -> String {
     let layout = Layout::from_segments([Segment::spinner().with_gradient(gradient, fill)]);
     let ctx = RenderContext {
         spinner: Some(frame),
@@ -115,17 +139,47 @@ fn main() {
 
     // The same SHADED bar colored by a green→red gradient, one row per mapping axis.
     let gradient_bars: &[(&str, Bar)] = &[
-        ("WIDTH", bar::styles::SHADED.with_filled_gradient(GREEN_RED, Axis::Width)),
-        ("FRACTION", bar::styles::SHADED.with_filled_gradient(GREEN_RED, Axis::Fraction)),
+        (
+            "WIDTH",
+            bar::styles::SHADED.with_filled_gradient(GREEN_RED, Axis::Width),
+        ),
+        (
+            "FRACTION",
+            bar::styles::SHADED.with_filled_gradient(GREEN_RED, Axis::Fraction),
+        ),
     ];
 
     // Gradient-colored spinners. `Cells` spreads the gradient across a multi-cell band, so the
     // KNIGHT scanner changes hue as it sweeps. `Pulse` breathes one color over time, sampled by the
     // spinner's tick count: STAR twinkles in place — no spatial motion — so the lightness pulse
-    // reads as the whole glyph brightening and dimming.
+    // reads as the whole glyph brightening and dimming. `Sweep` moves a bright spotlight across the
+    // frame: the VIBING word never changes, so only the highlight travels, lifting individual
+    // letters brighter from left to right and back — the "vibeing…" shimmer.
     let gradient_spinners: &[(&str, Spinner, Gradient, SpinnerFill)] = &[
-        ("KNIGHT", spinner::styles::KNIGHT, GREEN_RED, SpinnerFill::Cells),
-        ("STAR", spinner::styles::STAR, STAR_PULSE, SpinnerFill::Pulse(8)),
+        (
+            "KNIGHT (Cells)",
+            spinner::styles::KNIGHT,
+            GREEN_RED,
+            SpinnerFill::Cells,
+        ),
+        (
+            "STAR (Pulse)",
+            spinner::styles::STAR,
+            STAR_PULSE,
+            SpinnerFill::Pulse(8),
+        ),
+        (
+            "spinning… (Pulse)",
+            SPINNING,
+            PURPLE_PULSE,
+            SpinnerFill::Pulse(12),
+        ),
+        (
+            "vibeing… (Sweep)",
+            VIBING,
+            ORANGE_SHIMMER,
+            SpinnerFill::Sweep(12),
+        ),
     ];
 
     // Names are left-aligned to a shared width so every row lines up in one column.
@@ -147,14 +201,8 @@ fn main() {
     let mut bar_phase: u32 = 0;
 
     // Each section is a header plus its rows; sections after the first add a leading blank line.
-    let total_lines = 1
-        + spinners.len()
-        + 2
-        + bars.len()
-        + 2
-        + gradient_bars.len()
-        + 2
-        + gradient_spinners.len();
+    let total_lines =
+        1 + spinners.len() + 2 + bars.len() + 2 + gradient_bars.len() + 2 + gradient_spinners.len();
 
     // Tag each spinner's frames with its row index; the bar timer contributes the sweep ticks.
     let spinner_ticks = spinners
@@ -231,7 +279,13 @@ fn main() {
             for (row, (name, _, gradient, fill)) in gradient_spinners.iter().enumerate() {
                 line(&format!(
                     "  {name:<name_width$}  {}",
-                    gradient_spinner(*gradient, *fill, gradient_frames[row], gradient_ticks[row], &demo_bar)
+                    gradient_spinner(
+                        *gradient,
+                        *fill,
+                        gradient_frames[row],
+                        gradient_ticks[row],
+                        &demo_bar
+                    )
                 ));
             }
             line("");

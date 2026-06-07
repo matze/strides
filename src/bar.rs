@@ -159,7 +159,16 @@ impl Bar<'_> {
 
         if let Some(c) = self.complete {
             // The filled run occupies columns `0..filled`.
-            self.render_run(buf, c, filled, 0, width, fraction, self.filled_gradient, self.filled_style);
+            self.render_run(
+                buf,
+                c,
+                filled,
+                0,
+                width,
+                fraction,
+                self.filled_gradient,
+                self.filled_style,
+            );
         }
 
         if let Some(in_between) = self.in_between {
@@ -168,7 +177,16 @@ impl Bar<'_> {
 
         if let Some(c) = self.empty {
             // The empty run continues at column `filled`.
-            self.render_run(buf, c, remaining, filled, width, fraction, self.empty_gradient, self.empty_style);
+            self.render_run(
+                buf,
+                c,
+                remaining,
+                filled,
+                width,
+                fraction,
+                self.empty_gradient,
+                self.empty_style,
+            );
         }
 
         if let Some(right) = self.right_border {

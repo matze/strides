@@ -677,7 +677,10 @@ mod tests {
 
         // Whatever the terminal color level, the visible glyphs are the frame, in order — for both
         // the spatial and the pulsing fill.
-        let cells = render(Segment::spinner().with_gradient(gradient, SpinnerFill::Cells), &ctx);
+        let cells = render(
+            Segment::spinner().with_gradient(gradient, SpinnerFill::Cells),
+            &ctx,
+        );
         assert_eq!(strip_ansi(&cells), "▒▓█");
 
         ctx.spinner_tick = 3;

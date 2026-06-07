@@ -78,6 +78,13 @@ pub enum SpinnerFill {
     /// across. Drawn from [`RenderContext::spinner_tick`], so it breathes in lockstep with the
     /// animation interval rather than a separate clock.
     Pulse(u32),
+    /// Sweep a bright spotlight across the frame over time. A triangle wave over the tick count
+    /// drives the spotlight center from left (t=0) to right (t=1) and back, completing one sweep
+    /// every `2 * period` ticks. Cells near the spotlight peak sample the gradient at high `t`
+    /// values (bright), while distant cells sample at lower `t` values (dim). Best for multi-cell
+    /// text spinners, where the shimmer is clearly visible. Drawn from [`RenderContext::spinner_tick`],
+    /// so the sweep moves in lockstep with the animation interval.
+    Sweep(u32),
 }
 
 /// A single renderable element of a [`Layout`].
@@ -291,6 +298,19 @@ impl Segment {
                             // uniformly, so the whole frame breathes in step with the animation.
                             let color = gradient.sample(triangle(ctx.spinner_tick, *period));
                             push_gradient_chars(buf, frame, |_| color);
+                        }
+                        Some((gradient, SpinnerFill::Sweep(period))) => {
+                            // Sweep a bright spotlight across the frame. The spotlight center h
+                            // drives from left to right and back over time, and each cell samples
+                            // the gradient at a value that peaks at the spotlight center and falls
+                            // to zero at distance >= 0.5 (a tent profile).
+                            let h = triangle(ctx.spinner_tick, *period);
+                            let denom = frame.chars().count().saturating_sub(1).max(1) as f64;
+                            push_gradient_chars(buf, frame, |i| {
+                                let p = i as f64 / denom;
+                                let t = (1.0 - (p - h).abs() * 2.0).max(0.0);
+                                gradient.sample(t)
+                            });
                         }
                         None => {
                             let style = style.unwrap_or(ctx.spinner_style);
@@ -666,6 +686,13 @@ mod tests {
             &ctx,
         );
         assert_eq!(strip_ansi(&pulse), "▒▓█");
+
+        ctx.spinner_tick = 5;
+        let sweep = render(
+            Segment::spinner().with_gradient(gradient, SpinnerFill::Sweep(8)),
+            &ctx,
+        );
+        assert_eq!(strip_ansi(&sweep), "▒▓█");
     }
 
     #[test]

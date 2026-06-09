@@ -165,10 +165,12 @@ where
         let mut this = self.project();
 
         this.core.materialize();
-        this.core.tick(cx);
+
+        let mut dirty = this.core.tick(cx);
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
             this.core.set_message(msg.into());
+            dirty = true;
         }
 
         match this.inner.as_mut().poll_next(cx) {
@@ -183,7 +185,15 @@ where
                 this.core.clear();
                 Poll::Ready(None)
             }
-            Poll::Pending => Poll::Pending,
+            Poll::Pending => {
+                // Keep the spinner animating while the inner stream stalls: the tick's timer
+                // wakes this task even when no items flow.
+                if dirty {
+                    this.core.render();
+                }
+
+                Poll::Pending
+            }
         }
     }
 }
@@ -393,10 +403,12 @@ where
         let mut this = self.project();
 
         this.core.materialize();
-        this.core.tick(cx);
+
+        let mut dirty = this.core.tick(cx);
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
             this.core.set_message(msg.into());
+            dirty = true;
         }
 
         match this.inner.as_mut().poll_next(cx) {
@@ -410,7 +422,15 @@ where
                 this.core.clear();
                 Poll::Ready(None)
             }
-            Poll::Pending => Poll::Pending,
+            Poll::Pending => {
+                // Keep the spinner animating while the inner stream stalls: the tick's timer
+                // wakes this task even when no items flow.
+                if dirty {
+                    this.core.render();
+                }
+
+                Poll::Pending
+            }
         }
     }
 }
@@ -547,10 +567,12 @@ where
         let mut this = self.project();
 
         this.core.materialize();
-        this.core.tick(cx);
+
+        let mut dirty = this.core.tick(cx);
 
         while let Poll::Ready(Some(msg)) = this.messages.as_mut().poll_next(cx) {
             this.core.set_message(msg.into());
+            dirty = true;
         }
 
         match this.inner.as_mut().poll_next(cx) {
@@ -570,7 +592,15 @@ where
                 this.core.clear();
                 Poll::Ready(None)
             }
-            Poll::Pending => Poll::Pending,
+            Poll::Pending => {
+                // Keep the spinner animating while the inner stream stalls: the tick's timer
+                // wakes this task even when no items flow.
+                if dirty {
+                    this.core.render();
+                }
+
+                Poll::Pending
+            }
         }
     }
 }

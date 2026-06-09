@@ -17,9 +17,7 @@
 
 use std::fmt::{self, Display, Formatter, Write as _};
 
-use owo_colors::OwoColorize;
-
-use crate::color::{push_gradient_run, Gradient};
+use crate::color::{push_gradient_run, push_styled, Gradient};
 
 /// How a [`Gradient`] is mapped across a bar's cells.
 ///
@@ -217,9 +215,7 @@ impl Bar<'_> {
             None => {
                 let run = CharRun::new(ch, count);
                 match style {
-                    Some(style) => {
-                        let _ = write!(buf, "{}", run.style(style));
-                    }
+                    Some(style) => push_styled(buf, run, style),
                     None => {
                         let _ = write!(buf, "{run}");
                     }

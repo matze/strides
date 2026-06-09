@@ -18,8 +18,10 @@
 //! approximation otherwise, and no escape sequences at all when color is unsupported or disabled
 //! via `NO_COLOR`.
 
-use std::fmt::Write as _;
+use std::fmt::{Display, Write as _};
 use std::sync::OnceLock;
+
+use owo_colors::{OwoColorize as _, Style};
 
 /// An 8-bit-per-channel RGB color.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -205,6 +207,23 @@ pub(crate) fn push_gradient_chars(buf: &mut String, s: &str, color_at: impl Fn(u
     push_cells(buf, color_level(), s.chars().enumerate(), color_at);
 }
 
+/// Append `value` wrapped in `style`'s escape codes, or plain when the terminal does not support
+/// color (`NO_COLOR`, `TERM=dumb`, no `TERM`). The single funnel for solid styles, keeping them
+/// consistent with gradients, which honor the same detection.
+pub(crate) fn push_styled(buf: &mut String, value: impl Display, style: Style) {
+    push_styled_at(buf, value, style, color_level());
+}
+
+/// Explicit-[`ColorLevel`] core of [`push_styled`], split out for unit tests.
+fn push_styled_at(buf: &mut String, value: impl Display, style: Style, level: ColorLevel) {
+    if level == ColorLevel::None {
+        let _ = write!(buf, "{value}");
+        return;
+    }
+
+    let _ = write!(buf, "{}", value.style(style));
+}
+
 /// Explicit-[`ColorLevel`] entry point for the repeated-char case, kept for unit tests.
 #[cfg(test)]
 fn push_run(
@@ -300,6 +319,20 @@ mod tests {
         assert_eq!(rgb_to_ansi256(Rgb(255, 0, 0)), 196);
         assert_eq!(rgb_to_ansi256(Rgb(0, 255, 0)), 46);
         assert_eq!(rgb_to_ansi256(Rgb(0, 0, 255)), 21);
+    }
+
+    #[test]
+    fn styled_none_level_is_plain() {
+        let mut buf = String::new();
+        push_styled_at(&mut buf, "x", Style::new().red(), ColorLevel::None);
+        assert_eq!(buf, "x");
+    }
+
+    #[test]
+    fn styled_colored_level_wraps_in_escapes() {
+        let mut buf = String::new();
+        push_styled_at(&mut buf, "x", Style::new().red(), ColorLevel::TrueColor);
+        assert_eq!(buf, "\x1b[31mx\x1b[0m");
     }
 
     #[test]

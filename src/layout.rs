@@ -24,10 +24,10 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::time::Duration;
 
-use owo_colors::{OwoColorize as _, Style};
+use owo_colors::Style;
 
 use crate::bar::Bar;
-use crate::color::{push_gradient_chars, Gradient};
+use crate::color::{push_gradient_chars, push_styled, Gradient};
 
 /// Values available to a [`Segment`] at render time.
 ///
@@ -314,7 +314,7 @@ impl Segment {
                         }
                         None => {
                             let style = style.unwrap_or(ctx.spinner_style);
-                            let _ = write!(buf, "{}", frame.style(style));
+                            push_styled(buf, frame, style);
                         }
                     }
                 }
@@ -344,7 +344,7 @@ impl Segment {
                         if let Some((_, right)) = border {
                             token.push_str(right);
                         }
-                        let _ = write!(buf, "{}", token.style(*style));
+                        push_styled(buf, token, *style);
                     }
                     None => {
                         if let Some((left, _)) = border {
@@ -374,15 +374,9 @@ impl Segment {
                         Some(width) => {
                             // Width pads to `width` chars, precision truncates to `width` chars.
                             let width = *width;
-                            let _ = write!(
-                                buf,
-                                "{}",
-                                format_args!("{label:<width$.width$}").style(style)
-                            );
+                            push_styled(buf, format_args!("{label:<width$.width$}"), style);
                         }
-                        None => {
-                            let _ = write!(buf, "{}", label.style(style));
-                        }
+                        None => push_styled(buf, label, style),
                     }
                 }
             }

@@ -83,17 +83,17 @@ pub mod styles {
 
 /// Progress bar style characters.
 #[derive(Default, Clone)]
-pub struct Bar<'a> {
+pub struct Bar {
     /// Character to symbolize incompleteness.
     empty: Option<char>,
     /// Character to symbolize completeness.
     complete: Option<char>,
     /// Characters in between complete and incomplete.
-    in_between: Option<&'a str>,
+    in_between: Option<&'static str>,
     /// Left border character
-    left_border: Option<&'a str>,
+    left_border: Option<&'static str>,
     /// Right border character
-    right_border: Option<&'a str>,
+    right_border: Option<&'static str>,
     /// Style applied to the filled portion of the bar.
     filled_style: Option<owo_colors::Style>,
     /// Style applied to the empty portion of the bar.
@@ -104,7 +104,7 @@ pub struct Bar<'a> {
     empty_gradient: Option<(Gradient, Axis)>,
 }
 
-impl Bar<'_> {
+impl Bar {
     /// Create a new bar from the character used for the empty portion and the character used for
     /// the filled portion. See the [`styles`] module for pre-defined variants.
     pub const fn new(empty: char, complete: char) -> Self {

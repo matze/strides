@@ -134,17 +134,18 @@ pub mod styles {
 ///
 /// Either each `char` of a single string is a frame (the common single-glyph case built with
 /// [`Spinner::new`]) or each `&str` of a slice is a frame (multi-cell animations built with
-/// [`Spinner::frames`]). Frame slices borrow from the spinner's data, so a yielded frame lives as
-/// long as that data rather than the [`Ticks`] stream.
+/// [`Spinner::frames`]). Frame data is `&'static` so spinners, themes and the adapters built from
+/// them carry no lifetime parameter; frames computed at runtime can be promoted with
+/// [`String::leak`] / [`Vec::leak`].
 #[derive(Clone, Copy)]
-enum Frames<'a> {
+enum Frames {
     /// Each `char` of the string is one frame.
-    Chars(&'a str),
+    Chars(&'static str),
     /// Each `&str` of the slice is one frame.
-    Strs(&'a [&'a str]),
+    Strs(&'static [&'static str]),
 }
 
-impl<'a> Frames<'a> {
+impl Frames {
     /// Whether there are no frames at all, the sentinel for an inactive spinner.
     const fn is_empty(&self) -> bool {
         match self {
@@ -161,9 +162,8 @@ impl<'a> Frames<'a> {
         }
     }
 
-    /// The frame at `index`, or `None` when out of range. The returned slice borrows from the
-    /// frame data (lifetime `'a`), not from `self`.
-    fn get(&self, index: usize) -> Option<&'a str> {
+    /// The frame at `index`, or `None` when out of range.
+    fn get(&self, index: usize) -> Option<&'static str> {
         match self {
             Frames::Chars(s) => {
                 let (start, ch) = s.char_indices().nth(index)?;
@@ -175,9 +175,9 @@ impl<'a> Frames<'a> {
 }
 
 /// A stream of spinner frames emitted at a set interval.
-pub struct Ticks<'a> {
+pub struct Ticks {
     /// All frames to cycle through.
-    frames: Frames<'a>,
+    frames: Frames,
     /// Index of the next frame to yield.
     next: usize,
     /// One-shot delay that is reset after each tick. `None` for an inactive spinner, which never
@@ -187,10 +187,10 @@ pub struct Ticks<'a> {
     interval: Duration,
 }
 
-impl<'a> Stream for Ticks<'a> {
-    type Item = &'a str;
+impl Stream for Ticks {
+    type Item = &'static str;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<&'a str>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<&'static str>> {
         let this = self.get_mut();
 
         // An inactive spinner carries no delay and never yields a frame.
@@ -221,18 +221,19 @@ impl<'a> Stream for Ticks<'a> {
 
 /// A spinner that emits a frame at a set interval.
 #[derive(Clone)]
-pub struct Spinner<'a> {
+pub struct Spinner {
     /// Frames making up the spinner.
-    frames: Frames<'a>,
+    frames: Frames,
     /// Refresh interval.
     interval: Duration,
 }
 
-impl<'a> Spinner<'a> {
+impl Spinner {
     /// Create a spinner whose frames are the individual characters of `chars`. This is the
     /// ergonomic constructor for single-glyph spinners; see the [`styles`] module for pre-defined
-    /// styles. For multi-cell animations use [`Spinner::frames`].
-    pub const fn new(chars: &'a str) -> Self {
+    /// styles. For multi-cell animations use [`Spinner::frames`]. Frames built at runtime can be
+    /// promoted to `&'static str` with [`String::leak`].
+    pub const fn new(chars: &'static str) -> Self {
         Self {
             frames: Frames::Chars(chars),
             interval: Duration::from_millis(80),
@@ -242,7 +243,7 @@ impl<'a> Spinner<'a> {
     /// Create a spinner from explicit multi-character `frames`, one `&str` per frame. Use this for
     /// animations whose frames span several columns, such as a Knight Rider / K.I.T.T. band. All
     /// frames should share the same display width so the rendered line does not jitter.
-    pub const fn frames(frames: &'a [&'a str]) -> Self {
+    pub const fn frames(frames: &'static [&'static str]) -> Self {
         Self {
             frames: Frames::Strs(frames),
             interval: Duration::from_millis(80),
@@ -264,7 +265,7 @@ impl<'a> Spinner<'a> {
     }
 
     /// Return a stream of frames at the set interval.
-    pub fn ticks(&self) -> Ticks<'a> {
+    pub fn ticks(&self) -> Ticks {
         // An inactive spinner (no frames) carries no delay; `poll_next` short-circuits to
         // `Pending` so it never yields and `Instant + interval` is never computed.
         let delay = (!self.frames.is_empty()).then(|| Delay::new(self.interval));

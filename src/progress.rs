@@ -23,10 +23,10 @@ use crate::term::{CursorGuard, Output};
 use crate::Theme;
 
 /// Materialised rendering bits used by the standalone path: line, spinner ticks, cursor guard.
-struct Rendering<'a> {
-    line: Line<'a>,
-    ticks: Ticks<'a>,
-    spinner_frame: Option<&'a str>,
+struct Rendering {
+    line: Line,
+    ticks: Ticks,
+    spinner_frame: Option<&'static str>,
     spinner_tick: u64,
     spinner_style: Style,
     annotation_style: Style,
@@ -36,26 +36,26 @@ struct Rendering<'a> {
 }
 
 /// Lifecycle of the standalone rendering bits.
-enum RenderingState<'a> {
+enum RenderingState {
     /// Constructed but not yet polled; materialised on the first poll.
     Pending,
     /// Materialised; standalone rendering is active.
-    Active(Rendering<'a>),
+    Active(Rendering),
     /// A [`Group`](crate::future::Group) owns rendering for this row; nothing is rendered here.
     Detached,
 }
 
 /// Per-row dynamic [`State`], theme / style overrides and the standalone rendering machinery,
 /// shared by every progress adapter.
-pub(crate) struct Progress<'a> {
+pub(crate) struct Progress {
     pub(crate) state: State,
-    theme_override: Option<Theme<'a>>,
+    theme_override: Option<Theme>,
     spinner_style_override: Option<Style>,
     annotation_style_override: Option<Style>,
-    rendering: RenderingState<'a>,
+    rendering: RenderingState,
 }
 
-impl<'a> Progress<'a> {
+impl Progress {
     pub(crate) fn new() -> Self {
         Self {
             state: State::new(),
@@ -78,7 +78,7 @@ impl<'a> Progress<'a> {
         self.state.enable_elapsed_time();
     }
 
-    pub(crate) fn set_theme(&mut self, theme: Theme<'a>) {
+    pub(crate) fn set_theme(&mut self, theme: Theme) {
         self.theme_override = Some(theme);
     }
 
@@ -167,7 +167,7 @@ impl<'a> Progress<'a> {
     }
 }
 
-impl<'a> Progressive<'a> for Progress<'a> {
+impl Progressive for Progress {
     fn label(&self) -> Option<&str> {
         self.state.label()
     }
@@ -189,7 +189,7 @@ impl<'a> Progressive<'a> for Progress<'a> {
     fn detach_rendering(&mut self) {
         self.rendering = RenderingState::Detached;
     }
-    fn theme(&self) -> Option<&Theme<'a>> {
+    fn theme(&self) -> Option<&Theme> {
         self.theme_override.as_ref()
     }
     fn spinner_style(&self) -> Option<Style> {

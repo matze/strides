@@ -16,8 +16,8 @@ use crate::Theme;
 
 /// One slot in a [`Group`]: the wrapped stream and its render line.
 struct Slot<'a, I> {
-    work: Pin<Box<dyn ProgressiveStream<'a, Item = I> + 'a>>,
-    line: Line<'a>,
+    work: Pin<Box<dyn ProgressiveStream<Item = I> + 'a>>,
+    line: Line,
 }
 
 /// A group of [`ProgressiveStream`]s rendered as one line per stream.
@@ -36,9 +36,9 @@ struct Slot<'a, I> {
 pub struct Group<'a, I> {
     slots: Vec<Option<Slot<'a, I>>>,
     buffer: VecDeque<I>,
-    theme: Theme<'a>,
-    ticks: Ticks<'a>,
-    spinner_frame: Option<&'a str>,
+    theme: Theme,
+    ticks: Ticks,
+    spinner_frame: Option<&'static str>,
     spinner_tick: u64,
     spinner_style: Style,
     annotation_style: Style,
@@ -53,7 +53,7 @@ pub struct Group<'a, I> {
 
 impl<'a, I> Group<'a, I> {
     /// Create a new group using `theme` as the default for rows that don't supply their own.
-    pub fn new(theme: impl Into<Theme<'a>>) -> Self {
+    pub fn new(theme: impl Into<Theme>) -> Self {
         let theme = theme.into();
         let output = theme.output;
         let is_tty = output.is_terminal();
@@ -108,7 +108,7 @@ impl<'a, I> Group<'a, I> {
     /// obtain one.
     pub fn push<S>(&mut self, mut stream: S)
     where
-        S: ProgressiveStream<'a, Item = I> + 'a,
+        S: ProgressiveStream<Item = I> + 'a,
     {
         let line = match stream.theme() {
             Some(row_theme) => Line::new(row_theme),

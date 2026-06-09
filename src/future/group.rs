@@ -16,8 +16,8 @@ use crate::Theme;
 
 /// One slot in a [`Group`]: the wrapped future and its render line.
 struct Slot<'a, O> {
-    work: Pin<Box<dyn ProgressiveFuture<'a, Output = O> + 'a>>,
-    line: Line<'a>,
+    work: Pin<Box<dyn ProgressiveFuture<Output = O> + 'a>>,
+    line: Line,
 }
 
 /// A group of [`ProgressiveFuture`]s rendered as one line per task.
@@ -61,9 +61,9 @@ struct Slot<'a, O> {
 pub struct Group<'a, O> {
     slots: Vec<Option<Slot<'a, O>>>,
     buffer: VecDeque<O>,
-    theme: Theme<'a>,
-    ticks: Ticks<'a>,
-    spinner_frame: Option<&'a str>,
+    theme: Theme,
+    ticks: Ticks,
+    spinner_frame: Option<&'static str>,
     spinner_tick: u64,
     spinner_style: Style,
     annotation_style: Style,
@@ -78,7 +78,7 @@ pub struct Group<'a, O> {
 
 impl<'a, O> Group<'a, O> {
     /// Create a new group using `theme` as the default for rows that don't supply their own.
-    pub fn new(theme: impl Into<Theme<'a>>) -> Self {
+    pub fn new(theme: impl Into<Theme>) -> Self {
         let theme = theme.into();
         let output = theme.output;
         let is_tty = output.is_terminal();
@@ -140,7 +140,7 @@ impl<'a, O> Group<'a, O> {
     /// [`progressive()`](crate::future::FutureExt::progressive) to lift it explicitly.
     pub fn push<F>(&mut self, mut fut: F)
     where
-        F: ProgressiveFuture<'a, Output = O> + 'a,
+        F: ProgressiveFuture<Output = O> + 'a,
     {
         let line = match fut.theme() {
             Some(row_theme) => Line::new(row_theme),

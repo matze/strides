@@ -18,7 +18,7 @@ use futures_lite::{future, StreamExt};
 use strides::future::{join, FutureExt, Group};
 use strides::{bar, term, Theme};
 
-fn theme() -> Theme<'static> {
+fn theme() -> Theme {
     let bar = bar::styles::THIN_LINE
         .with_filled_style(owo_colors::Style::new().bright_purple())
         .with_empty_style(owo_colors::Style::new().bright_black());

@@ -44,7 +44,7 @@ pub struct RenderContext<'a> {
     /// Whether the elapsed time should be rendered at all.
     pub show_elapsed: bool,
     /// Bar style used by [`Segment::Bar`].
-    pub bar: &'a Bar<'a>,
+    pub bar: &'a Bar,
     /// Bar width in characters.
     pub bar_width: usize,
     /// Current progress fraction, or `None` when no progress is tracked.
@@ -589,7 +589,7 @@ mod tests {
         }
     }
 
-    static EMPTY_BAR: &Bar<'static> = &Bar::empty();
+    static EMPTY_BAR: &Bar = &Bar::empty();
 
     #[test]
     fn skips_empty_segments_and_their_separators() {

@@ -42,18 +42,18 @@ use crate::Theme;
 
 pin_project! {
     /// A [`Stream`] wrapped to track progress derived from a fraction closure.
-    pub struct ProgressStream<'a, S, F, M = Pending<&'static str>> {
+    pub struct ProgressStream<S, F, M = Pending<&'static str>> {
         #[pin]
         inner: S,
         fraction_fn: F,
         #[pin]
         messages: M,
-        core: Progress<'a>,
+        core: Progress,
         current: usize,
     }
 }
 
-impl<S, F> ProgressStream<'_, S, F> {
+impl<S, F> ProgressStream<S, F> {
     fn new(inner: S, fraction_fn: F) -> Self {
         Self {
             inner,
@@ -65,7 +65,7 @@ impl<S, F> ProgressStream<'_, S, F> {
     }
 }
 
-impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
+impl<S, F, M> ProgressStream<S, F, M> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
     pub fn with_label(mut self, label: impl Display) -> Self {
         self.core.set_label(label.to_string());
@@ -80,7 +80,7 @@ impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
 
     /// Render this row with `theme`. Drives standalone rendering when the stream is polled
     /// directly; overrides the parent [`Group`]'s theme when pushed.
-    pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
+    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
         self.core.set_theme(theme.into());
         self
     }
@@ -101,7 +101,7 @@ impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
     /// Replace the displayed message each time `messages` yields a value. The item type is
     /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
     /// zero-copy; other formatted values should be `format!`'d at the call site.
-    pub fn with_messages<S2>(self, messages: S2) -> ProgressStream<'a, S, F, S2>
+    pub fn with_messages<S2>(self, messages: S2) -> ProgressStream<S, F, S2>
     where
         S2: Stream,
         S2::Item: Into<Cow<'static, str>>,
@@ -116,7 +116,7 @@ impl<'a, S, F, M> ProgressStream<'a, S, F, M> {
     }
 }
 
-impl<'a, S, F, M> Progressive<'a> for ProgressStream<'a, S, F, M> {
+impl<S, F, M> Progressive for ProgressStream<S, F, M> {
     fn label(&self) -> Option<&str> {
         self.core.label()
     }
@@ -138,7 +138,7 @@ impl<'a, S, F, M> Progressive<'a> for ProgressStream<'a, S, F, M> {
     fn detach_rendering(&mut self) {
         self.core.detach_rendering();
     }
-    fn theme(&self) -> Option<&Theme<'a>> {
+    fn theme(&self) -> Option<&Theme> {
         self.core.theme()
     }
     fn spinner_style(&self) -> Option<Style> {
@@ -152,7 +152,7 @@ impl<'a, S, F, M> Progressive<'a> for ProgressStream<'a, S, F, M> {
     }
 }
 
-impl<S, F, M> Stream for ProgressStream<'_, S, F, M>
+impl<S, F, M> Stream for ProgressStream<S, F, M>
 where
     S: Stream,
     F: FnMut(usize, &S::Item) -> f64,
@@ -204,11 +204,7 @@ pub trait StreamExt: Stream {
     /// and a fraction closure. Sugar for `self.progressive(fraction_fn).with_theme(theme)`. The
     /// closure receives the zero-based item index and a reference to the item, matching
     /// [`Iterator::enumerate`].
-    fn progress<'a, F>(
-        self,
-        theme: impl Into<Theme<'a>>,
-        fraction_fn: F,
-    ) -> ProgressStream<'a, Self, F>
+    fn progress<F>(self, theme: impl Into<Theme>, fraction_fn: F) -> ProgressStream<Self, F>
     where
         Self: Sized,
         F: FnMut(usize, &Self::Item) -> f64,
@@ -219,7 +215,7 @@ pub trait StreamExt: Stream {
     /// Wrap this stream as an unconfigured [`ProgressStream`]. Awaited directly it renders with
     /// [`Theme::default()`]; chain [`with_theme`](ProgressStream::with_theme) for a custom theme,
     /// or push into a [`Group`] to inherit the Group's theme.
-    fn progressive<'a, F>(self, fraction_fn: F) -> ProgressStream<'a, Self, F>
+    fn progressive<F>(self, fraction_fn: F) -> ProgressStream<Self, F>
     where
         Self: Sized,
         F: FnMut(usize, &Self::Item) -> f64,
@@ -230,11 +226,7 @@ pub trait StreamExt: Stream {
     /// Wrap this stream as a [`ProgressBytesStream`] configured for standalone rendering with
     /// `theme` and a byte-delta closure. Sugar for
     /// `self.progressive_bytes(bytes_fn).with_theme(theme)`.
-    fn progress_bytes<'a, F>(
-        self,
-        theme: impl Into<Theme<'a>>,
-        bytes_fn: F,
-    ) -> ProgressBytesStream<'a, Self, F>
+    fn progress_bytes<F>(self, theme: impl Into<Theme>, bytes_fn: F) -> ProgressBytesStream<Self, F>
     where
         Self: Sized,
         F: FnMut(&Self::Item) -> u64,
@@ -244,7 +236,7 @@ pub trait StreamExt: Stream {
 
     /// Wrap this stream as an unconfigured [`ProgressBytesStream`]. Same theme-inheritance rules
     /// as [`progressive`](Self::progressive).
-    fn progressive_bytes<'a, F>(self, bytes_fn: F) -> ProgressBytesStream<'a, Self, F>
+    fn progressive_bytes<F>(self, bytes_fn: F) -> ProgressBytesStream<Self, F>
     where
         Self: Sized,
         F: FnMut(&Self::Item) -> u64,
@@ -256,7 +248,7 @@ pub trait StreamExt: Stream {
     /// `theme`. Items are counted internally; chain
     /// [`with_len`](ProgressCountStream::with_len) to enable the bar. Sugar for
     /// `self.progressive_count().with_theme(theme)`.
-    fn progress_count<'a>(self, theme: impl Into<Theme<'a>>) -> ProgressCountStream<'a, Self>
+    fn progress_count(self, theme: impl Into<Theme>) -> ProgressCountStream<Self>
     where
         Self: Sized,
     {
@@ -265,7 +257,7 @@ pub trait StreamExt: Stream {
 
     /// Wrap this stream as an unconfigured [`ProgressCountStream`]. Same theme-inheritance rules
     /// as [`progressive`](Self::progressive).
-    fn progressive_count<'a>(self) -> ProgressCountStream<'a, Self>
+    fn progressive_count(self) -> ProgressCountStream<Self>
     where
         Self: Sized,
     {
@@ -277,17 +269,17 @@ impl<S> StreamExt for S where S: Stream {}
 
 pin_project! {
     /// A [`Stream`] wrapped to track cumulative bytes, smoothed rate and (optionally) total.
-    pub struct ProgressBytesStream<'a, S, F, M = Pending<&'static str>> {
+    pub struct ProgressBytesStream<S, F, M = Pending<&'static str>> {
         #[pin]
         inner: S,
         bytes_fn: F,
         #[pin]
         messages: M,
-        core: Progress<'a>,
+        core: Progress,
     }
 }
 
-impl<S, F> ProgressBytesStream<'_, S, F> {
+impl<S, F> ProgressBytesStream<S, F> {
     fn new(inner: S, bytes_fn: F) -> Self {
         Self {
             inner,
@@ -298,7 +290,7 @@ impl<S, F> ProgressBytesStream<'_, S, F> {
     }
 }
 
-impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
+impl<S, F, M> ProgressBytesStream<S, F, M> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
     pub fn with_label(mut self, label: impl Display) -> Self {
         self.core.set_label(label.to_string());
@@ -319,7 +311,7 @@ impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
 
     /// Render this row with `theme`. Drives standalone rendering when the stream is polled
     /// directly; overrides the parent [`Group`]'s theme when pushed.
-    pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
+    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
         self.core.set_theme(theme.into());
         self
     }
@@ -340,7 +332,7 @@ impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
     /// Replace the displayed message each time `messages` yields a value. The item type is
     /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
     /// zero-copy; other formatted values should be `format!`'d at the call site.
-    pub fn with_messages<S2>(self, messages: S2) -> ProgressBytesStream<'a, S, F, S2>
+    pub fn with_messages<S2>(self, messages: S2) -> ProgressBytesStream<S, F, S2>
     where
         S2: Stream,
         S2::Item: Into<Cow<'static, str>>,
@@ -354,7 +346,7 @@ impl<'a, S, F, M> ProgressBytesStream<'a, S, F, M> {
     }
 }
 
-impl<'a, S, F, M> Progressive<'a> for ProgressBytesStream<'a, S, F, M> {
+impl<S, F, M> Progressive for ProgressBytesStream<S, F, M> {
     fn label(&self) -> Option<&str> {
         self.core.label()
     }
@@ -376,7 +368,7 @@ impl<'a, S, F, M> Progressive<'a> for ProgressBytesStream<'a, S, F, M> {
     fn detach_rendering(&mut self) {
         self.core.detach_rendering();
     }
-    fn theme(&self) -> Option<&Theme<'a>> {
+    fn theme(&self) -> Option<&Theme> {
         self.core.theme()
     }
     fn spinner_style(&self) -> Option<Style> {
@@ -390,7 +382,7 @@ impl<'a, S, F, M> Progressive<'a> for ProgressBytesStream<'a, S, F, M> {
     }
 }
 
-impl<S, F, M> Stream for ProgressBytesStream<'_, S, F, M>
+impl<S, F, M> Stream for ProgressBytesStream<S, F, M>
 where
     S: Stream,
     F: FnMut(&S::Item) -> u64,
@@ -443,18 +435,18 @@ pin_project! {
     /// Streams whose hint upper-bound is `None` (channels, `pending`, most combinators that can
     /// shorten or extend) render only the spinner, label, message and elapsed-time segments.
     /// [`with_len`](Self::with_len) overrides the hint when the caller knows better.
-    pub struct ProgressCountStream<'a, S, M = Pending<&'static str>> {
+    pub struct ProgressCountStream<S, M = Pending<&'static str>> {
         #[pin]
         inner: S,
         #[pin]
         messages: M,
-        core: Progress<'a>,
+        core: Progress,
         current: u64,
         total: Option<u64>,
     }
 }
 
-impl<S: Stream> ProgressCountStream<'_, S> {
+impl<S: Stream> ProgressCountStream<S> {
     fn new(inner: S) -> Self {
         // Best-effort total from the stream's size hint. Exact for bounded sources like
         // `iter(Vec)` or `iter(0..n)`; combinators like `.filter()` lose accuracy but their
@@ -470,7 +462,7 @@ impl<S: Stream> ProgressCountStream<'_, S> {
     }
 }
 
-impl<'a, S, M> ProgressCountStream<'a, S, M> {
+impl<S, M> ProgressCountStream<S, M> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
     pub fn with_label(mut self, label: impl Display) -> Self {
         self.core.set_label(label.to_string());
@@ -492,7 +484,7 @@ impl<'a, S, M> ProgressCountStream<'a, S, M> {
 
     /// Render this row with `theme`. Drives standalone rendering when the stream is polled
     /// directly; overrides the parent [`Group`]'s theme when pushed.
-    pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
+    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
         self.core.set_theme(theme.into());
         self
     }
@@ -513,7 +505,7 @@ impl<'a, S, M> ProgressCountStream<'a, S, M> {
     /// Replace the displayed message each time `messages` yields a value. The item type is
     /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
     /// zero-copy; other formatted values should be `format!`'d at the call site.
-    pub fn with_messages<S2>(self, messages: S2) -> ProgressCountStream<'a, S, S2>
+    pub fn with_messages<S2>(self, messages: S2) -> ProgressCountStream<S, S2>
     where
         S2: Stream,
         S2::Item: Into<Cow<'static, str>>,
@@ -528,7 +520,7 @@ impl<'a, S, M> ProgressCountStream<'a, S, M> {
     }
 }
 
-impl<'a, S, M> Progressive<'a> for ProgressCountStream<'a, S, M> {
+impl<S, M> Progressive for ProgressCountStream<S, M> {
     fn label(&self) -> Option<&str> {
         self.core.label()
     }
@@ -541,7 +533,7 @@ impl<'a, S, M> Progressive<'a> for ProgressCountStream<'a, S, M> {
     fn detach_rendering(&mut self) {
         self.core.detach_rendering();
     }
-    fn theme(&self) -> Option<&Theme<'a>> {
+    fn theme(&self) -> Option<&Theme> {
         self.core.theme()
     }
     fn spinner_style(&self) -> Option<Style> {
@@ -555,7 +547,7 @@ impl<'a, S, M> Progressive<'a> for ProgressCountStream<'a, S, M> {
     }
 }
 
-impl<S, M> Stream for ProgressCountStream<'_, S, M>
+impl<S, M> Stream for ProgressCountStream<S, M>
 where
     S: Stream,
     M: Stream,
@@ -644,7 +636,7 @@ mod tests {
     #[test]
     fn count_without_size_hint_keeps_progress_absent() {
         // `stream::pending::<u32>()` has size_hint `(0, None)` and yields nothing.
-        let s: ProgressCountStream<'_, _> = stream::pending::<u32>().progressive_count();
+        let s: ProgressCountStream<_> = stream::pending::<u32>().progressive_count();
         assert_eq!(Progressive::progress(&s), None);
     }
 

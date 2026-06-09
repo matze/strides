@@ -16,8 +16,8 @@ use crate::Theme;
 
 /// Per-frame rendering inputs that are not part of [`Progressive`]. The spinner frame, the
 /// elapsed time, and style overrides.
-pub(crate) struct FrameContext<'a> {
-    pub spinner_frame: Option<&'a str>,
+pub(crate) struct FrameContext {
+    pub spinner_frame: Option<&'static str>,
     pub spinner_tick: u64,
     pub elapsed: Duration,
     pub show_elapsed: bool,
@@ -25,15 +25,15 @@ pub(crate) struct FrameContext<'a> {
     pub annotation_style: Style,
 }
 
-pub(crate) struct Line<'a> {
-    bar: Bar<'a>,
+pub(crate) struct Line {
+    bar: Bar,
     bar_width: usize,
     layout: Layout,
     render_buf: String,
 }
 
-impl<'a> Line<'a> {
-    pub(crate) fn new(theme: &Theme<'a>) -> Self {
+impl Line {
+    pub(crate) fn new(theme: &Theme) -> Self {
         Self {
             bar: theme.bar.clone(),
             bar_width: theme.effective_bar_width(),
@@ -44,10 +44,10 @@ impl<'a> Line<'a> {
 
     /// Render `item` together with `frame` into this line's internal buffer and return a borrowed
     /// view of the rendered bytes. The buffer is cleared before each render.
-    pub(crate) fn render_into<'b, P: Progressive<'b> + ?Sized>(
+    pub(crate) fn render_into<P: Progressive + ?Sized>(
         &mut self,
         item: &P,
-        frame: &FrameContext<'_>,
+        frame: &FrameContext,
     ) -> &str {
         let ctx = RenderContext {
             spinner: frame.spinner_frame,
@@ -72,10 +72,10 @@ impl<'a> Line<'a> {
 
     /// Render `item` and write the result to `output` as the single line of a standalone wrapper:
     /// hide cursor, clear current line, write content, flush. No-op when `is_tty` is false.
-    pub(crate) fn standalone_render<'b, P: Progressive<'b> + ?Sized>(
+    pub(crate) fn standalone_render<P: Progressive + ?Sized>(
         &mut self,
         item: &P,
-        frame: &FrameContext<'_>,
+        frame: &FrameContext,
         output: Output,
         is_tty: bool,
     ) {

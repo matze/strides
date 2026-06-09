@@ -26,14 +26,14 @@ pin_project! {
     /// The bar fills from 0/N to N/N as each inner future completes. Results are collected in
     /// completion order. With zero inputs, awaiting resolves immediately with an empty `Vec` and no
     /// progress is reported.
-    pub struct Join<'a, F: Future, M = Pending<&'static str>> {
+    pub struct Join<F: Future, M = Pending<&'static str>> {
         futs: Vec<Pin<Box<F>>>,
         results: Vec<F::Output>,
         completed: usize,
         total: usize,
         #[pin]
         messages: M,
-        core: Progress<'a>,
+        core: Progress,
     }
 }
 
@@ -42,7 +42,7 @@ pin_project! {
 /// Accepts any [`IntoIterator`] of futures — `Vec<F>`, arrays, or any adapter chain. Without
 /// [`with_theme`](Join::with_theme) the result inherits the parent `Group`'s theme when pushed,
 /// with `with_theme` it renders standalone or overrides the Group's theme per-row.
-pub fn join<I>(futs: I) -> Join<'static, I::Item>
+pub fn join<I>(futs: I) -> Join<I::Item>
 where
     I: IntoIterator,
     I::Item: Future,
@@ -50,7 +50,7 @@ where
     Join::new(futs)
 }
 
-impl<F: Future> Join<'_, F> {
+impl<F: Future> Join<F> {
     /// Construct a `Join` with no theme set. Awaited directly it renders with [`Theme::default()`];
     /// chain [`with_theme`](Self::with_theme) for a custom theme, or push it into a
     /// [`Group`](super::Group) to inherit the Group's theme.
@@ -71,11 +71,11 @@ impl<F: Future> Join<'_, F> {
     }
 }
 
-impl<'a, F: Future, M> Join<'a, F, M> {
+impl<F: Future, M> Join<F, M> {
     /// Render this row with `theme`. Used for both the standalone path (drives the spinner /
     /// bar / cursor on its own line when awaited) and the per-row override path inside a
     /// [`Group`](super::Group).
-    pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
+    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
         self.core.set_theme(theme.into());
         self
     }
@@ -108,7 +108,7 @@ impl<'a, F: Future, M> Join<'a, F, M> {
     /// Replace the displayed message each time `messages` yields a value. The item type is
     /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
     /// zero-copy; other formatted values should be `format!`'d at the call site.
-    pub fn with_messages<S>(self, messages: S) -> Join<'a, F, S>
+    pub fn with_messages<S>(self, messages: S) -> Join<F, S>
     where
         S: Stream,
         S::Item: Into<Cow<'static, str>>,
@@ -124,7 +124,7 @@ impl<'a, F: Future, M> Join<'a, F, M> {
     }
 }
 
-impl<'a, F: Future, M> Progressive<'a> for Join<'a, F, M> {
+impl<F: Future, M> Progressive for Join<F, M> {
     fn label(&self) -> Option<&str> {
         self.core.label()
     }
@@ -145,7 +145,7 @@ impl<'a, F: Future, M> Progressive<'a> for Join<'a, F, M> {
         self.core.detach_rendering();
     }
 
-    fn theme(&self) -> Option<&Theme<'a>> {
+    fn theme(&self) -> Option<&Theme> {
         self.core.theme()
     }
 
@@ -162,7 +162,7 @@ impl<'a, F: Future, M> Progressive<'a> for Join<'a, F, M> {
     }
 }
 
-impl<F, M> Future for Join<'_, F, M>
+impl<F, M> Future for Join<F, M>
 where
     F: Future,
     M: Stream,
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn progress_reflects_completion_fraction() {
-        let j: Join<'_, futures_lite::future::Ready<()>> = Join::new(Vec::new());
+        let j: Join<futures_lite::future::Ready<()>> = Join::new(Vec::new());
         assert!(j.progress().is_none());
 
         let j = join(vec![futures_lite::future::ready(()); 4]);

@@ -38,18 +38,18 @@ pin_project! {
     /// machinery). The `M` and `P` parameters track the optional message and progress stream types
     /// and default to [`Pending`] (a ZST that never yields) so the bare `fut.progress(theme).await`
     /// path allocates nothing beyond the spinner [`Ticks`](crate::spinner::Ticks) state.
-    pub struct ProgressFuture<'a, F, M = Pending<&'static str>, P = Pending<f64>> {
+    pub struct ProgressFuture<F, M = Pending<&'static str>, P = Pending<f64>> {
         #[pin]
         inner: F,
         #[pin]
         messages: M,
         #[pin]
         progress: P,
-        core: Progress<'a>,
+        core: Progress,
     }
 }
 
-impl<F> ProgressFuture<'_, F> {
+impl<F> ProgressFuture<F> {
     /// Construct a `ProgressFuture` with no theme set. Awaiting it directly renders with
     /// [`Theme::default()`]; calling [`with_theme`](Self::with_theme) overrides per-row;
     /// [`Group::push`] takes over rendering and supplies the Group's theme instead.
@@ -63,7 +63,7 @@ impl<F> ProgressFuture<'_, F> {
     }
 }
 
-impl<'a, F, M, P> ProgressFuture<'a, F, M, P> {
+impl<F, M, P> ProgressFuture<F, M, P> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
     pub fn with_label(mut self, label: impl Display) -> Self {
         self.core.set_label(label.to_string());
@@ -74,7 +74,7 @@ impl<'a, F, M, P> ProgressFuture<'a, F, M, P> {
     /// exhausted the last value remains visible. The item type is anything that converts into a
     /// `Cow<'static, str>`: `&'static str` and `String` are zero-copy; other formatted values
     /// should be `format!`'d at the call site.
-    pub fn with_messages<S>(self, messages: S) -> ProgressFuture<'a, F, S, P>
+    pub fn with_messages<S>(self, messages: S) -> ProgressFuture<F, S, P>
     where
         S: Stream,
         S::Item: Into<Cow<'static, str>>,
@@ -94,7 +94,7 @@ impl<'a, F, M, P> ProgressFuture<'a, F, M, P> {
     }
 
     /// Drive the progress bar from a stream of fractions in `0.0..=1.0`. The latest value wins.
-    pub fn with_progress<S>(self, progress: S) -> ProgressFuture<'a, F, M, S>
+    pub fn with_progress<S>(self, progress: S) -> ProgressFuture<F, M, S>
     where
         S: Stream<Item = f64>,
     {
@@ -109,7 +109,7 @@ impl<'a, F, M, P> ProgressFuture<'a, F, M, P> {
     /// Render this row with `theme`. Used for both the standalone path (drives the spinner /
     /// bar / cursor on its own line when awaited) and the per-row override path inside a
     /// [`Group`] (the Group consults this theme when constructing the slot's line).
-    pub fn with_theme(mut self, theme: impl Into<Theme<'a>>) -> Self {
+    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
         self.core.set_theme(theme.into());
         self
     }
@@ -129,7 +129,7 @@ impl<'a, F, M, P> ProgressFuture<'a, F, M, P> {
     }
 }
 
-impl<'a, F, M, P> Progressive<'a> for ProgressFuture<'a, F, M, P> {
+impl<F, M, P> Progressive for ProgressFuture<F, M, P> {
     fn label(&self) -> Option<&str> {
         self.core.label()
     }
@@ -151,7 +151,7 @@ impl<'a, F, M, P> Progressive<'a> for ProgressFuture<'a, F, M, P> {
     fn detach_rendering(&mut self) {
         self.core.detach_rendering();
     }
-    fn theme(&self) -> Option<&Theme<'a>> {
+    fn theme(&self) -> Option<&Theme> {
         self.core.theme()
     }
     fn spinner_style(&self) -> Option<Style> {
@@ -165,7 +165,7 @@ impl<'a, F, M, P> Progressive<'a> for ProgressFuture<'a, F, M, P> {
     }
 }
 
-impl<F, M, P> Future for ProgressFuture<'_, F, M, P>
+impl<F, M, P> Future for ProgressFuture<F, M, P>
 where
     F: Future,
     M: Stream,
@@ -224,7 +224,7 @@ where
 pub trait FutureExt: Future {
     /// Wrap this future in a [`ProgressFuture`] configured for standalone rendering with `theme`.
     /// Sugar for `self.progressive().with_theme(theme)`.
-    fn progress<'a>(self, theme: impl Into<Theme<'a>>) -> ProgressFuture<'a, Self>
+    fn progress(self, theme: impl Into<Theme>) -> ProgressFuture<Self>
     where
         Self: Sized,
     {
@@ -234,7 +234,7 @@ pub trait FutureExt: Future {
     /// Wrap this future in an unconfigured [`ProgressFuture`]. Awaited directly it renders with
     /// [`Theme::default()`]; chain [`with_theme`](ProgressFuture::with_theme) for a custom theme,
     /// or push it into a [`Group`] to inherit the Group's theme.
-    fn progressive<'a>(self) -> ProgressFuture<'a, Self>
+    fn progressive(self) -> ProgressFuture<Self>
     where
         Self: Sized,
     {
@@ -243,7 +243,7 @@ pub trait FutureExt: Future {
 
     /// Lift into a [`ProgressFuture`] and attach a static label. Equivalent to
     /// `self.progressive().with_label(label)`.
-    fn with_label<'a>(self, label: impl Display) -> ProgressFuture<'a, Self>
+    fn with_label(self, label: impl Display) -> ProgressFuture<Self>
     where
         Self: Sized,
     {
@@ -252,7 +252,7 @@ pub trait FutureExt: Future {
 
     /// Lift into a [`ProgressFuture`] and prepend elapsed time. Equivalent to
     /// `self.progressive().with_elapsed_time()`.
-    fn with_elapsed_time<'a>(self) -> ProgressFuture<'a, Self>
+    fn with_elapsed_time(self) -> ProgressFuture<Self>
     where
         Self: Sized,
     {
@@ -261,7 +261,7 @@ pub trait FutureExt: Future {
 
     /// Lift into a [`ProgressFuture`] and drive the displayed message from `messages`.
     /// Equivalent to `self.progressive().with_messages(messages)`.
-    fn with_messages<'a, S>(self, messages: S) -> ProgressFuture<'a, Self, S>
+    fn with_messages<S>(self, messages: S) -> ProgressFuture<Self, S>
     where
         Self: Sized,
         S: Stream,
@@ -272,7 +272,7 @@ pub trait FutureExt: Future {
 
     /// Lift into a [`ProgressFuture`] and drive the progress bar from `progress`.
     /// Equivalent to `self.progressive().with_progress(progress)`.
-    fn with_progress<'a, S>(self, progress: S) -> ProgressFuture<'a, Self, Pending<&'static str>, S>
+    fn with_progress<S>(self, progress: S) -> ProgressFuture<Self, Pending<&'static str>, S>
     where
         Self: Sized,
         S: Stream<Item = f64>,

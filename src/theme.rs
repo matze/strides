@@ -26,11 +26,11 @@ use crate::term::Output;
 
 /// Combined theme for progress display, bundling a [`Spinner`] and a [`Bar`].
 #[derive(Clone)]
-pub struct Theme<'a> {
+pub struct Theme {
     /// Spinner style to indicate activity.
-    pub(crate) spinner: Spinner<'a>,
+    pub(crate) spinner: Spinner,
     /// Bar style to indicate progress.
-    pub(crate) bar: Bar<'a>,
+    pub(crate) bar: Bar,
     /// Width of the progress bar in characters.
     pub(crate) bar_width: Option<usize>,
     /// Ordering and formatting of the rendered progress line.
@@ -39,7 +39,7 @@ pub struct Theme<'a> {
     pub(crate) output: Output,
 }
 
-impl Default for Theme<'_> {
+impl Default for Theme {
     /// A theme that animates out of the box: [`styles::DOTS_3`] spinner, no bar, default
     /// [`Layout`]. For a fully empty theme to build on, use
     /// [`Theme::new`].
@@ -48,7 +48,7 @@ impl Default for Theme<'_> {
     }
 }
 
-impl<'a> Theme<'a> {
+impl Theme {
     /// Create an empty theme: inactive spinner, no bar, auto-detected bar width, default
     /// [`Layout`]. Most callers want [`Theme::default`] instead, which seeds a visible spinner;
     /// use `new` when building a theme bottom-up and explicitly setting every piece.
@@ -65,18 +65,18 @@ impl<'a> Theme<'a> {
     /// Create a theme that pairs `spinner` with `bar`. Sugar for
     /// `Theme::new().with_spinner(spinner).with_bar(bar)` — the spinner + bar combination is the
     /// overwhelmingly common case, and `Theme::with` names both at once instead of chaining.
-    pub const fn with(spinner: Spinner<'a>, bar: Bar<'a>) -> Self {
+    pub const fn with(spinner: Spinner, bar: Bar) -> Self {
         Self::new().with_spinner(spinner).with_bar(bar)
     }
 
     /// Set the [`Spinner`] used to indicate ongoing activity.
-    pub const fn with_spinner(mut self, spinner: Spinner<'a>) -> Self {
+    pub const fn with_spinner(mut self, spinner: Spinner) -> Self {
         self.spinner = spinner;
         self
     }
 
     /// Set the [`Bar`] used to render fractional progress.
-    pub const fn with_bar(mut self, bar: Bar<'a>) -> Self {
+    pub const fn with_bar(mut self, bar: Bar) -> Self {
         self.bar = bar;
         self
     }
@@ -110,8 +110,8 @@ impl<'a> Theme<'a> {
     }
 }
 
-impl<'a> From<Spinner<'a>> for Theme<'a> {
-    fn from(spinner: Spinner<'a>) -> Self {
+impl From<Spinner> for Theme {
+    fn from(spinner: Spinner) -> Self {
         Theme::new().with_spinner(spinner)
     }
 }

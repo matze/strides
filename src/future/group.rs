@@ -228,7 +228,7 @@ where
 
         if active_count == 0 {
             // All slots done and emitted; one final return.
-            let _ = term::reset();
+            let _ = term::reset_on(this.output);
             return Poll::Ready(None);
         }
 

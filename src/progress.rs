@@ -17,7 +17,7 @@ use owo_colors::Style;
 
 use crate::line::{FrameContext, Line};
 use crate::progressive::Progressive;
-use crate::spinner::Ticks;
+use crate::spinner::{Spinner, Ticks};
 use crate::state::State;
 use crate::term::{CursorGuard, Output};
 use crate::Theme;
@@ -102,7 +102,14 @@ impl<'a> Progress<'a> {
         let theme = self.theme_override.clone().unwrap_or_default();
         let output = theme.output;
         let is_tty = output.is_terminal();
-        let ticks = theme.spinner.ticks();
+
+        // A non-terminal output never renders, so active ticks would only wake the task every
+        // interval for nothing. Substitute the inactive spinner's never-yielding ticks.
+        let ticks = if is_tty {
+            theme.spinner.ticks()
+        } else {
+            Spinner::inactive().ticks()
+        };
         let line = Line::new(&theme);
         self.rendering = RenderingState::Active(Rendering {
             line,

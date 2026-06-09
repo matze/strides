@@ -10,7 +10,7 @@ use owo_colors::Style;
 
 use crate::line::{FrameContext, Line};
 use crate::progressive::ProgressiveFuture;
-use crate::spinner::Ticks;
+use crate::spinner::{Spinner, Ticks};
 use crate::term::{self, clear_line, CursorGuard, Output};
 use crate::Theme;
 
@@ -82,7 +82,14 @@ impl<'a, O> Group<'a, O> {
         let theme = theme.into();
         let output = theme.output;
         let is_tty = output.is_terminal();
-        let ticks = theme.spinner.ticks();
+
+        // A non-terminal output never renders, so active ticks would only wake the task every
+        // interval for nothing. Substitute the inactive spinner's never-yielding ticks.
+        let ticks = if is_tty {
+            theme.spinner.ticks()
+        } else {
+            Spinner::inactive().ticks()
+        };
         Self {
             slots: Vec::new(),
             buffer: VecDeque::new(),

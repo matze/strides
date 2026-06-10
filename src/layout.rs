@@ -21,7 +21,7 @@
 //! ```
 
 use std::borrow::Cow;
-use std::fmt::Write as _;
+use std::fmt::{self, Display, Formatter, Write as _};
 use std::time::Duration;
 
 use owo_colors::Style;
@@ -327,38 +327,15 @@ impl Segment {
                 if !ctx.show_elapsed {
                     return;
                 }
+                let token = ElapsedToken {
+                    border: border.as_ref(),
+                    precision: *precision as usize,
+                    secs: ctx.elapsed.as_secs_f64(),
+                };
                 match style {
-                    Some(style) => {
-                        // Styling wraps the whole token, borders included, so it has to be
-                        // materialized before it can be styled.
-                        let mut token = String::new();
-                        if let Some((left, _)) = border {
-                            token.push_str(left);
-                        }
-                        let _ = write!(
-                            token,
-                            "{:.*}s",
-                            *precision as usize,
-                            ctx.elapsed.as_secs_f64()
-                        );
-                        if let Some((_, right)) = border {
-                            token.push_str(right);
-                        }
-                        push_styled(buf, token, *style);
-                    }
+                    Some(style) => push_styled(buf, token, *style),
                     None => {
-                        if let Some((left, _)) = border {
-                            buf.push_str(left);
-                        }
-                        let _ = write!(
-                            buf,
-                            "{:.*}s",
-                            *precision as usize,
-                            ctx.elapsed.as_secs_f64()
-                        );
-                        if let Some((_, right)) = border {
-                            buf.push_str(right);
-                        }
+                        let _ = write!(buf, "{token}");
                     }
                 }
             }
@@ -412,6 +389,31 @@ impl Segment {
             Segment::Literal(text) => buf.push_str(text),
             Segment::Custom(f) => f(ctx, buf),
         }
+    }
+}
+
+/// The elapsed-time token (`1.23s`, borders included) rendered through `Display`, so the styling
+/// layer can wrap the whole token in escape codes without materializing it as an intermediate
+/// `String` first.
+struct ElapsedToken<'a> {
+    border: Option<&'a (Cow<'static, str>, Cow<'static, str>)>,
+    precision: usize,
+    secs: f64,
+}
+
+impl Display for ElapsedToken<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Some((left, _)) = self.border {
+            f.write_str(left)?;
+        }
+
+        write!(f, "{:.*}s", self.precision, self.secs)?;
+
+        if let Some((_, right)) = self.border {
+            f.write_str(right)?;
+        }
+
+        Ok(())
     }
 }
 

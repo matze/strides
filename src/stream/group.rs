@@ -3,15 +3,13 @@
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Instant;
 
 use futures_lite::Stream;
 use owo_colors::Style;
 
-use crate::line::{FrameContext, Line};
+use crate::group::GroupCore;
+use crate::line::Line;
 use crate::progressive::ProgressiveStream;
-use crate::spinner::Ticks;
-use crate::term::{self, clear_line, CursorGuard, Output};
 use crate::Theme;
 
 /// One slot in a [`Group`]: the wrapped stream and its render line.
@@ -36,68 +34,34 @@ struct Slot<'a, I> {
 pub struct Group<'a, I> {
     slots: Vec<Option<Slot<'a, I>>>,
     buffer: VecDeque<I>,
-    theme: Theme,
-    ticks: Ticks,
-    spinner_frame: Option<&'static str>,
-    spinner_tick: u64,
-    spinner_style: Style,
-    annotation_style: Style,
-    with_elapsed_time: bool,
-    start: Option<Instant>,
-    output: Output,
-    is_tty: bool,
-    rendered_lines: usize,
-    dirty: bool,
-    _guard: CursorGuard,
+    core: GroupCore,
 }
 
 impl<'a, I> Group<'a, I> {
     /// Create a new group using `theme` as the default for rows that don't supply their own.
     pub fn new(theme: impl Into<Theme>) -> Self {
-        let theme = theme.into();
-        let output = theme.output;
-        let is_tty = output.is_terminal();
-
-        // A non-terminal output never renders, and a theme without a spinner has nothing to
-        // animate; both get the never-yielding ticks so polling schedules no timer wakeups.
-        let ticks = match &theme.spinner {
-            Some(spinner) if is_tty => spinner.ticks(),
-            _ => Ticks::never(),
-        };
         Self {
             slots: Vec::new(),
             buffer: VecDeque::new(),
-            theme,
-            ticks,
-            spinner_frame: None,
-            spinner_tick: 0,
-            spinner_style: Style::new(),
-            annotation_style: Style::new(),
-            with_elapsed_time: false,
-            start: None,
-            output,
-            is_tty,
-            rendered_lines: 0,
-            dirty: true,
-            _guard: CursorGuard { output, is_tty },
+            core: GroupCore::new(theme.into()),
         }
     }
 
     /// Default spinner style for rows that don't supply their own.
     pub fn with_spinner_style(mut self, spinner_style: Style) -> Self {
-        self.spinner_style = spinner_style;
+        self.core.spinner_style = spinner_style;
         self
     }
 
     /// Default annotation (label) style for rows that don't supply their own.
     pub fn with_annotation_style(mut self, annotation_style: Style) -> Self {
-        self.annotation_style = annotation_style;
+        self.core.annotation_style = annotation_style;
         self
     }
 
     /// Default for showing elapsed time on rows that don't supply their own.
     pub fn with_elapsed_time(mut self) -> Self {
-        self.with_elapsed_time = true;
+        self.core.with_elapsed_time = true;
         self
     }
 
@@ -111,14 +75,14 @@ impl<'a, I> Group<'a, I> {
     {
         let line = match stream.theme() {
             Some(row_theme) => Line::new(row_theme),
-            None => Line::new(&self.theme),
+            None => Line::new(&self.core.theme),
         };
         stream.detach_rendering();
         self.slots.push(Some(Slot {
             work: Box::pin(stream),
             line,
         }));
-        self.dirty = true;
+        self.core.mark_dirty();
     }
 }
 
@@ -135,13 +99,7 @@ where
             return Poll::Ready(None);
         }
 
-        this.start.get_or_insert_with(Instant::now);
-
-        if let Poll::Ready(frame) = Pin::new(&mut this.ticks).poll_next(cx) {
-            this.spinner_frame = frame;
-            this.spinner_tick = this.spinner_tick.wrapping_add(1);
-            this.dirty = true;
-        }
+        this.core.tick(cx);
 
         // Poll each active slot once, collecting any newly-yielded items into the buffer.
         for slot in this.slots.iter_mut() {
@@ -149,11 +107,11 @@ where
                 match s.work.as_mut().poll_next(cx) {
                     Poll::Ready(Some(item)) => {
                         this.buffer.push_back(item);
-                        this.dirty = true;
+                        this.core.mark_dirty();
                     }
                     Poll::Ready(None) => {
                         *slot = None;
-                        this.dirty = true;
+                        this.core.mark_dirty();
                     }
                     Poll::Pending => {}
                 }
@@ -162,51 +120,20 @@ where
 
         let active_count = this.slots.iter().filter(|s| s.is_some()).count();
 
-        if this.is_tty && this.dirty && (active_count > 0 || this.rendered_lines > 0) {
-            this.dirty = false;
-            let elapsed = this.start.expect("start initialised above").elapsed();
-
-            this.output.with_lock(|stdout| {
-                let _ = stdout.write_all(term::HIDE_CURSOR);
-
-                for slot in this.slots.iter_mut().flatten() {
-                    let _ = clear_line(stdout);
-                    let item = slot.work.as_ref().get_ref();
-                    let frame = FrameContext {
-                        spinner_frame: this.spinner_frame,
-                        spinner_tick: this.spinner_tick,
-                        elapsed,
-                        show_elapsed: item.show_elapsed_time() || this.with_elapsed_time,
-                        spinner_style: item.spinner_style().unwrap_or(this.spinner_style),
-                        annotation_style: item.annotation_style().unwrap_or(this.annotation_style),
-                    };
-                    let rendered = slot.line.render_into(item, &frame);
-                    let _ = stdout.write_all(rendered.as_bytes());
-                    let _ = stdout.write_all(b"\n");
-                }
-
-                let stale = this.rendered_lines.saturating_sub(active_count);
-                for _ in 0..stale {
-                    let _ = clear_line(stdout);
-                    let _ = stdout.write_all(b"\n");
-                }
-
-                let total = active_count + stale;
-                if total > 0 {
-                    let _ = term::move_up(stdout, total as u16);
-                }
-
-                let _ = stdout.flush();
-            });
-            this.rendered_lines = active_count;
-        }
+        this.core.repaint(
+            active_count,
+            this.slots
+                .iter_mut()
+                .flatten()
+                .map(|s| (&mut s.line, s.work.as_ref().get_ref())),
+        );
 
         if let Some(item) = this.buffer.pop_front() {
             return Poll::Ready(Some(item));
         }
 
         if active_count == 0 {
-            let _ = term::reset_on(this.output);
+            this.core.finish();
             return Poll::Ready(None);
         }
 

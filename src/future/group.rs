@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Instant;
 
 use futures_lite::Stream;
 use owo_colors::Style;
@@ -16,6 +17,9 @@ use crate::Theme;
 struct Slot<'a, O> {
     work: Pin<Box<dyn ProgressiveFuture<Output = O> + 'a>>,
     line: Line,
+    /// Instant of this row's first poll, driving its elapsed-time segment. Captured lazily so
+    /// the reported duration matches "since first frame", not "since push".
+    start: Option<Instant>,
 }
 
 /// A group of [`ProgressiveFuture`]s rendered as one line per task.
@@ -113,6 +117,7 @@ impl<'a, O> Group<'a, O> {
         self.slots.push(Slot {
             work: Box::pin(fut),
             line,
+            start: None,
         });
         self.core.mark_dirty();
     }
@@ -136,13 +141,17 @@ where
         // Poll every slot; buffer every completion so simultaneous Readys aren't lost. Completed
         // slots are removed outright (order preserved), so a long-lived group doesn't accumulate
         // dead entries.
-        this.slots.retain_mut(|s| match s.work.as_mut().poll(cx) {
-            Poll::Ready(out) => {
-                this.buffer.push_back(out);
-                this.core.mark_dirty();
-                false
+        this.slots.retain_mut(|s| {
+            s.start.get_or_insert_with(Instant::now);
+
+            match s.work.as_mut().poll(cx) {
+                Poll::Ready(out) => {
+                    this.buffer.push_back(out);
+                    this.core.mark_dirty();
+                    false
+                }
+                Poll::Pending => true,
             }
-            Poll::Pending => true,
         });
 
         let active_count = this.slots.len();
@@ -151,7 +160,7 @@ where
             active_count,
             this.slots
                 .iter()
-                .map(|s| (&s.line, s.work.as_ref().get_ref())),
+                .map(|s| (&s.line, s.work.as_ref().get_ref(), s.start)),
         );
 
         if let Some(out) = this.buffer.pop_front() {

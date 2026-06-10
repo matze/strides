@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Instant;
 
 use futures_lite::Stream;
 use owo_colors::Style;
@@ -16,6 +17,9 @@ use crate::Theme;
 struct Slot<'a, I> {
     work: Pin<Box<dyn ProgressiveStream<Item = I> + 'a>>,
     line: Line,
+    /// Instant of this row's first poll, driving its elapsed-time segment. Captured lazily so
+    /// the reported duration matches "since first frame", not "since push".
+    start: Option<Instant>,
 }
 
 /// A group of [`ProgressiveStream`]s rendered as one line per stream.
@@ -81,6 +85,7 @@ impl<'a, I> Group<'a, I> {
         self.slots.push(Slot {
             work: Box::pin(stream),
             line,
+            start: None,
         });
         self.core.mark_dirty();
     }
@@ -104,8 +109,10 @@ where
         // Poll each slot once, collecting any newly-yielded items into the buffer. Terminated
         // slots are removed outright (order preserved), so a long-lived group doesn't accumulate
         // dead entries.
-        this.slots
-            .retain_mut(|s| match s.work.as_mut().poll_next(cx) {
+        this.slots.retain_mut(|s| {
+            s.start.get_or_insert_with(Instant::now);
+
+            match s.work.as_mut().poll_next(cx) {
                 Poll::Ready(Some(item)) => {
                     this.buffer.push_back(item);
                     this.core.mark_dirty();
@@ -116,7 +123,8 @@ where
                     false
                 }
                 Poll::Pending => true,
-            });
+            }
+        });
 
         let active_count = this.slots.len();
 
@@ -124,7 +132,7 @@ where
             active_count,
             this.slots
                 .iter()
-                .map(|s| (&s.line, s.work.as_ref().get_ref())),
+                .map(|s| (&s.line, s.work.as_ref().get_ref(), s.start)),
         );
 
         if let Some(item) = this.buffer.pop_front() {

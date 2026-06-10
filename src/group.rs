@@ -9,7 +9,7 @@
 use std::fmt::Write as _;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures_lite::Stream as _;
 use owo_colors::Style;
@@ -32,8 +32,6 @@ pub(crate) struct GroupCore {
     ticks: Ticks,
     spinner_frame: Option<&'static str>,
     spinner_tick: u64,
-    /// Instant of the first poll, driving the elapsed-time segment.
-    start: Option<Instant>,
     output: Output,
     is_tty: bool,
     /// Rows drawn by the previous repaint, so completed rows are cleared rather than left behind.
@@ -66,7 +64,6 @@ impl GroupCore {
             ticks,
             spinner_frame: None,
             spinner_tick: 0,
-            start: None,
             output,
             is_tty,
             rendered_lines: 0,
@@ -82,10 +79,8 @@ impl GroupCore {
         self.dirty = true;
     }
 
-    /// Note the instant of the first poll and advance the spinner.
+    /// Advance the spinner.
     pub(crate) fn tick(&mut self, cx: &mut Context<'_>) {
-        self.start.get_or_insert_with(Instant::now);
-
         if let Poll::Ready(frame) = Pin::new(&mut self.ticks).poll_next(cx) {
             self.spinner_frame = frame;
             self.spinner_tick = self.spinner_tick.wrapping_add(1);
@@ -96,11 +91,13 @@ impl GroupCore {
     /// Repaint one line per row, clear lines left over from rows that completed since the last
     /// frame, and move the cursor back up. The whole frame is assembled into the reusable buffer
     /// and written in a single call. No-op unless the output is a terminal and something changed.
-    /// `active_count` must equal the number of items `rows` yields.
+    /// `active_count` must equal the number of items `rows` yields. Each row carries the instant
+    /// of its own first poll, so elapsed time is per-row rather than per-group; `None` (a row
+    /// never polled) renders as zero.
     pub(crate) fn repaint<'i, P>(
         &mut self,
         active_count: usize,
-        rows: impl IntoIterator<Item = (&'i Line, &'i P)>,
+        rows: impl IntoIterator<Item = (&'i Line, &'i P, Option<Instant>)>,
     ) where
         P: Progressive + ?Sized + 'i,
     {
@@ -109,17 +106,17 @@ impl GroupCore {
         }
 
         self.dirty = false;
-        let elapsed = self.start.expect("tick noted the start").elapsed();
+        let now = Instant::now();
 
         self.frame_buf.clear();
         self.frame_buf.push_str(term::HIDE_CURSOR);
 
-        for (line, item) in rows {
+        for (line, item, start) in rows {
             self.frame_buf.push_str(term::CLEAR_LINE);
             let frame = FrameContext {
                 spinner_frame: self.spinner_frame,
                 spinner_tick: self.spinner_tick,
-                elapsed,
+                elapsed: start.map_or(Duration::ZERO, |start| now.duration_since(start)),
                 show_elapsed: item.show_elapsed_time() || self.with_elapsed_time,
                 spinner_style: item.spinner_style().unwrap_or(self.spinner_style),
                 annotation_style: item.annotation_style().unwrap_or(self.annotation_style),

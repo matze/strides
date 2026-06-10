@@ -32,7 +32,7 @@ struct Slot<'a, I> {
 /// [`ProgressStream`](crate::stream::ProgressStream) /
 /// [`ProgressBytesStream`](crate::stream::ProgressBytesStream) take precedence on that row.
 pub struct Group<'a, I> {
-    slots: Vec<Option<Slot<'a, I>>>,
+    slots: Vec<Slot<'a, I>>,
     buffer: VecDeque<I>,
     core: GroupCore,
 }
@@ -78,10 +78,10 @@ impl<'a, I> Group<'a, I> {
             None => Line::new(&self.core.theme),
         };
         stream.detach_rendering();
-        self.slots.push(Some(Slot {
+        self.slots.push(Slot {
             work: Box::pin(stream),
             line,
-        }));
+        });
         self.core.mark_dirty();
     }
 }
@@ -101,30 +101,29 @@ where
 
         this.core.tick(cx);
 
-        // Poll each active slot once, collecting any newly-yielded items into the buffer.
-        for slot in this.slots.iter_mut() {
-            if let Some(s) = slot {
-                match s.work.as_mut().poll_next(cx) {
-                    Poll::Ready(Some(item)) => {
-                        this.buffer.push_back(item);
-                        this.core.mark_dirty();
-                    }
-                    Poll::Ready(None) => {
-                        *slot = None;
-                        this.core.mark_dirty();
-                    }
-                    Poll::Pending => {}
+        // Poll each slot once, collecting any newly-yielded items into the buffer. Terminated
+        // slots are removed outright (order preserved), so a long-lived group doesn't accumulate
+        // dead entries.
+        this.slots
+            .retain_mut(|s| match s.work.as_mut().poll_next(cx) {
+                Poll::Ready(Some(item)) => {
+                    this.buffer.push_back(item);
+                    this.core.mark_dirty();
+                    true
                 }
-            }
-        }
+                Poll::Ready(None) => {
+                    this.core.mark_dirty();
+                    false
+                }
+                Poll::Pending => true,
+            });
 
-        let active_count = this.slots.iter().filter(|s| s.is_some()).count();
+        let active_count = this.slots.len();
 
         this.core.repaint(
             active_count,
             this.slots
                 .iter()
-                .flatten()
                 .map(|s| (&s.line, s.work.as_ref().get_ref())),
         );
 

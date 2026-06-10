@@ -57,7 +57,7 @@ struct Slot<'a, O> {
 /// });
 /// ```
 pub struct Group<'a, O> {
-    slots: Vec<Option<Slot<'a, O>>>,
+    slots: Vec<Slot<'a, O>>,
     buffer: VecDeque<O>,
     core: GroupCore,
 }
@@ -110,10 +110,10 @@ impl<'a, O> Group<'a, O> {
             None => Line::new(&self.core.theme),
         };
         fut.detach_rendering();
-        self.slots.push(Some(Slot {
+        self.slots.push(Slot {
             work: Box::pin(fut),
             line,
-        }));
+        });
         self.core.mark_dirty();
     }
 }
@@ -133,24 +133,24 @@ where
 
         this.core.tick(cx);
 
-        // Poll every active slot; buffer every completion so simultaneous Readys aren't lost.
-        for slot in this.slots.iter_mut() {
-            if let Some(s) = slot {
-                if let Poll::Ready(out) = s.work.as_mut().poll(cx) {
-                    this.buffer.push_back(out);
-                    *slot = None;
-                    this.core.mark_dirty();
-                }
+        // Poll every slot; buffer every completion so simultaneous Readys aren't lost. Completed
+        // slots are removed outright (order preserved), so a long-lived group doesn't accumulate
+        // dead entries.
+        this.slots.retain_mut(|s| match s.work.as_mut().poll(cx) {
+            Poll::Ready(out) => {
+                this.buffer.push_back(out);
+                this.core.mark_dirty();
+                false
             }
-        }
+            Poll::Pending => true,
+        });
 
-        let active_count = this.slots.iter().filter(|s| s.is_some()).count();
+        let active_count = this.slots.len();
 
         this.core.repaint(
             active_count,
             this.slots
                 .iter()
-                .flatten()
                 .map(|s| (&s.line, s.work.as_ref().get_ref())),
         );
 

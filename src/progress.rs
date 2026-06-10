@@ -66,7 +66,7 @@ impl Progress {
         }
     }
 
-    pub(crate) fn set_label(&mut self, label: String) {
+    pub(crate) fn set_label(&mut self, label: Cow<'static, str>) {
         self.state.set_label(label);
     }
 

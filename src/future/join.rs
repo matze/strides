@@ -6,7 +6,6 @@
 //! other independent rows, or call [`with_theme`](Join::with_theme) for a self-contained row.
 
 use std::borrow::Cow;
-use std::fmt::Display;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -94,8 +93,10 @@ impl<F: Future, M> Join<F, M> {
     }
 
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    pub fn with_label(mut self, label: impl Display) -> Self {
-        self.core.set_label(label.to_string());
+    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
+    /// the call site.
+    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
+        self.core.set_label(label.into());
         self
     }
 

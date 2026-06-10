@@ -27,7 +27,6 @@ pub mod group;
 pub use group::Group;
 
 use std::borrow::Cow;
-use std::fmt::Display;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -67,8 +66,10 @@ impl<S, F> ProgressStream<S, F> {
 
 impl<S, F, M> ProgressStream<S, F, M> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    pub fn with_label(mut self, label: impl Display) -> Self {
-        self.core.set_label(label.to_string());
+    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
+    /// the call site.
+    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
+        self.core.set_label(label.into());
         self
     }
 
@@ -292,8 +293,10 @@ impl<S, F> ProgressBytesStream<S, F> {
 
 impl<S, F, M> ProgressBytesStream<S, F, M> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    pub fn with_label(mut self, label: impl Display) -> Self {
-        self.core.set_label(label.to_string());
+    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
+    /// the call site.
+    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
+        self.core.set_label(label.into());
         self
     }
 
@@ -464,8 +467,10 @@ impl<S: Stream> ProgressCountStream<S> {
 
 impl<S, M> ProgressCountStream<S, M> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    pub fn with_label(mut self, label: impl Display) -> Self {
-        self.core.set_label(label.to_string());
+    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
+    /// the call site.
+    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
+        self.core.set_label(label.into());
         self
     }
 

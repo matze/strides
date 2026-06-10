@@ -16,7 +16,6 @@ pub use group::Group;
 pub use join::{join, Join};
 
 use std::borrow::Cow;
-use std::fmt::Display;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -65,8 +64,10 @@ impl<F> ProgressFuture<F> {
 
 impl<F, M, P> ProgressFuture<F, M, P> {
     /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    pub fn with_label(mut self, label: impl Display) -> Self {
-        self.core.set_label(label.to_string());
+    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
+    /// the call site.
+    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
+        self.core.set_label(label.into());
         self
     }
 
@@ -243,7 +244,7 @@ pub trait FutureExt: Future {
 
     /// Lift into a [`ProgressFuture`] and attach a static label. Equivalent to
     /// `self.progressive().with_label(label)`.
-    fn with_label(self, label: impl Display) -> ProgressFuture<Self>
+    fn with_label(self, label: impl Into<Cow<'static, str>>) -> ProgressFuture<Self>
     where
         Self: Sized,
     {

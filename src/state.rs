@@ -20,7 +20,7 @@ const RATE_SAMPLE_INTERVAL: Duration = Duration::from_millis(100);
 const RATE_ALPHA: f64 = 0.3;
 
 pub(crate) struct State {
-    pub(crate) label: Option<String>,
+    pub(crate) label: Option<Cow<'static, str>>,
     pub(crate) message: Option<Cow<'static, str>>,
     pub(crate) progress: Option<f64>,
     pub(crate) bytes_done: u64,
@@ -48,7 +48,7 @@ impl State {
         }
     }
 
-    pub(crate) fn set_label(&mut self, label: String) {
+    pub(crate) fn set_label(&mut self, label: Cow<'static, str>) {
         self.label = Some(label);
     }
 

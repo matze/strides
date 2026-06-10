@@ -123,9 +123,9 @@ where
         this.core.repaint(
             active_count,
             this.slots
-                .iter_mut()
+                .iter()
                 .flatten()
-                .map(|s| (&mut s.line, s.work.as_ref().get_ref())),
+                .map(|s| (&s.line, s.work.as_ref().get_ref())),
         );
 
         if let Some(item) = this.buffer.pop_front() {

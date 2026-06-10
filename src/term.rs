@@ -11,12 +11,14 @@
 
 use std::io::{IsTerminal, Write};
 
-pub(crate) const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
-pub(crate) const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
+pub(crate) const HIDE_CURSOR: &str = "\x1b[?25l";
+pub(crate) const SHOW_CURSOR: &str = "\x1b[?25h";
 
-const CLEAR_CURRENT_LINE: &[u8] = b"\x1b[2K";
-const MOVE_TO_COLUMN_0: &[u8] = b"\x1b[1G";
-const CLEAR_FROM_CURSOR_DOWN: &[u8] = b"\x1b[J";
+/// Clear the current line and move the cursor to the first column.
+pub(crate) const CLEAR_LINE: &str = "\x1b[2K\x1b[1G";
+
+const MOVE_TO_COLUMN_0: &str = "\x1b[1G";
+const CLEAR_FROM_CURSOR_DOWN: &str = "\x1b[J";
 
 /// Which standard stream progress rendering is written to.
 ///
@@ -52,18 +54,6 @@ impl Output {
     }
 }
 
-/// Clear the current line and move the cursor to the first column.
-pub(crate) fn clear_line<W: Write + ?Sized>(w: &mut W) -> std::io::Result<()> {
-    w.write_all(CLEAR_CURRENT_LINE)?;
-    w.write_all(MOVE_TO_COLUMN_0)?;
-    Ok(())
-}
-
-/// Move the cursor up `n` lines.
-pub(crate) fn move_up<W: Write + ?Sized>(w: &mut W, n: u16) -> std::io::Result<()> {
-    write!(w, "\x1b[{n}A")
-}
-
 /// Restores the terminal cursor when dropped, including early drops where the progress builder is
 /// abandoned before completion (e.g. `break` out of a `for_each`).
 pub(crate) struct CursorGuard {
@@ -75,8 +65,8 @@ impl Drop for CursorGuard {
     fn drop(&mut self) {
         if self.is_tty {
             self.output.with_lock(|w| {
-                let _ = clear_line(w);
-                let _ = w.write_all(SHOW_CURSOR);
+                let _ = w.write_all(CLEAR_LINE.as_bytes());
+                let _ = w.write_all(SHOW_CURSOR.as_bytes());
                 let _ = w.flush();
             });
         }
@@ -105,9 +95,9 @@ pub fn reset_on(output: Output) -> std::io::Result<()> {
     }
 
     output.with_lock(|w| {
-        w.write_all(SHOW_CURSOR)?;
-        w.write_all(MOVE_TO_COLUMN_0)?;
-        w.write_all(CLEAR_FROM_CURSOR_DOWN)?;
+        w.write_all(SHOW_CURSOR.as_bytes())?;
+        w.write_all(MOVE_TO_COLUMN_0.as_bytes())?;
+        w.write_all(CLEAR_FROM_CURSOR_DOWN.as_bytes())?;
         w.flush()
     })
 }

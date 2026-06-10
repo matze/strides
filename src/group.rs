@@ -6,6 +6,7 @@
 //! only their slot storage and poll semantics (a future resolves once, a stream yields many
 //! items).
 
+use std::fmt::Write as _;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -16,7 +17,7 @@ use owo_colors::Style;
 use crate::line::{FrameContext, Line};
 use crate::progressive::Progressive;
 use crate::spinner::Ticks;
-use crate::term::{self, clear_line, CursorGuard, Output};
+use crate::term::{self, CursorGuard, Output};
 use crate::Theme;
 
 pub(crate) struct GroupCore {
@@ -38,6 +39,10 @@ pub(crate) struct GroupCore {
     /// Rows drawn by the previous repaint, so completed rows are cleared rather than left behind.
     rendered_lines: usize,
     dirty: bool,
+    /// Frame buffer reused across repaints: the entire frame — escapes and all rows — is
+    /// assembled here and written in a single call, minimizing syscalls (stderr is unbuffered,
+    /// stdout flushes per newline) and avoiding tearing.
+    frame_buf: String,
     _guard: CursorGuard,
 }
 
@@ -66,6 +71,7 @@ impl GroupCore {
             is_tty,
             rendered_lines: 0,
             dirty: true,
+            frame_buf: String::new(),
             _guard: CursorGuard { output, is_tty },
         }
     }
@@ -88,12 +94,13 @@ impl GroupCore {
     }
 
     /// Repaint one line per row, clear lines left over from rows that completed since the last
-    /// frame, and move the cursor back up. No-op unless the output is a terminal and something
-    /// changed. `active_count` must equal the number of items `rows` yields.
+    /// frame, and move the cursor back up. The whole frame is assembled into the reusable buffer
+    /// and written in a single call. No-op unless the output is a terminal and something changed.
+    /// `active_count` must equal the number of items `rows` yields.
     pub(crate) fn repaint<'i, P>(
         &mut self,
         active_count: usize,
-        rows: impl IntoIterator<Item = (&'i mut Line, &'i P)>,
+        rows: impl IntoIterator<Item = (&'i Line, &'i P)>,
     ) where
         P: Progressive + ?Sized + 'i,
     {
@@ -104,36 +111,40 @@ impl GroupCore {
         self.dirty = false;
         let elapsed = self.start.expect("tick noted the start").elapsed();
 
+        self.frame_buf.clear();
+        self.frame_buf.push_str(term::HIDE_CURSOR);
+
+        for (line, item) in rows {
+            self.frame_buf.push_str(term::CLEAR_LINE);
+            let frame = FrameContext {
+                spinner_frame: self.spinner_frame,
+                spinner_tick: self.spinner_tick,
+                elapsed,
+                show_elapsed: item.show_elapsed_time() || self.with_elapsed_time,
+                spinner_style: item.spinner_style().unwrap_or(self.spinner_style),
+                annotation_style: item.annotation_style().unwrap_or(self.annotation_style),
+            };
+            line.render_to(item, &frame, &mut self.frame_buf);
+            self.frame_buf.push('\n');
+        }
+
+        // Clear any leftover lines from a previous frame whose rows have since completed.
+        let stale = self.rendered_lines.saturating_sub(active_count);
+
+        for _ in 0..stale {
+            self.frame_buf.push_str(term::CLEAR_LINE);
+            self.frame_buf.push('\n');
+        }
+
+        // Move the cursor back up to the first row.
+        let total = active_count + stale;
+
+        if total > 0 {
+            let _ = write!(self.frame_buf, "\x1b[{total}A");
+        }
+
         self.output.with_lock(|out| {
-            let _ = out.write_all(term::HIDE_CURSOR);
-
-            for (line, item) in rows {
-                let _ = clear_line(out);
-                let frame = FrameContext {
-                    spinner_frame: self.spinner_frame,
-                    spinner_tick: self.spinner_tick,
-                    elapsed,
-                    show_elapsed: item.show_elapsed_time() || self.with_elapsed_time,
-                    spinner_style: item.spinner_style().unwrap_or(self.spinner_style),
-                    annotation_style: item.annotation_style().unwrap_or(self.annotation_style),
-                };
-                let rendered = line.render_into(item, &frame);
-                let _ = out.write_all(rendered.as_bytes());
-                let _ = out.write_all(b"\n");
-            }
-
-            // Clear any leftover lines from a previous frame whose rows have since completed.
-            let stale = self.rendered_lines.saturating_sub(active_count);
-            for _ in 0..stale {
-                let _ = clear_line(out);
-                let _ = out.write_all(b"\n");
-            }
-
-            let total = active_count + stale;
-            if total > 0 {
-                let _ = term::move_up(out, total as u16);
-            }
-
+            let _ = out.write_all(self.frame_buf.as_bytes());
             let _ = out.flush();
         });
 

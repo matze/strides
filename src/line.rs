@@ -1,8 +1,8 @@
 //! Per-row rendering helper.
 //!
-//! A [`Line`] holds the theme bits used to render one terminal row (bar, bar width, layout) and a
-//! reusable buffer. It only fills the buffer — callers (standalone wrappers, [`Group`]s) own the
-//! actual stdout writes and cursor management.
+//! A [`Line`] holds the theme bits used to render one terminal row (bar, bar width, layout). It
+//! only fills buffers — callers (standalone wrappers, [`Group`]s) own the actual terminal writes
+//! and cursor management.
 
 use std::time::Duration;
 
@@ -11,7 +11,7 @@ use owo_colors::Style;
 use crate::bar::Bar;
 use crate::layout::{Layout, RenderContext};
 use crate::progressive::Progressive;
-use crate::term::{self, clear_line, Output};
+use crate::term::{self, Output};
 use crate::Theme;
 
 /// Per-frame rendering inputs that are not part of [`Progressive`]. The spinner frame, the
@@ -25,11 +25,37 @@ pub(crate) struct FrameContext {
     pub annotation_style: Style,
 }
 
+/// Assemble the [`RenderContext`] for one frame of `item`.
+fn context<'a, P: Progressive + ?Sized>(
+    bar: Option<&'a Bar>,
+    bar_width: usize,
+    item: &'a P,
+    frame: &FrameContext,
+) -> RenderContext<'a> {
+    RenderContext {
+        spinner: frame.spinner_frame,
+        spinner_tick: frame.spinner_tick,
+        elapsed: frame.elapsed,
+        show_elapsed: frame.show_elapsed,
+        bar,
+        bar_width,
+        progress: item.progress(),
+        bytes_done: item.bytes_done(),
+        bytes_total: item.bytes_total(),
+        rate: item.rate(),
+        label: item.label(),
+        message: item.message(),
+        spinner_style: frame.spinner_style,
+        annotation_style: frame.annotation_style,
+    }
+}
+
 pub(crate) struct Line {
     bar: Option<Bar>,
     bar_width: usize,
     layout: Layout,
-    render_buf: String,
+    /// Frame buffer for the standalone path, reused across frames.
+    frame_buf: String,
 }
 
 impl Line {
@@ -38,40 +64,25 @@ impl Line {
             bar: theme.bar.clone(),
             bar_width: theme.effective_bar_width(),
             layout: theme.layout.clone(),
-            render_buf: String::new(),
+            frame_buf: String::new(),
         }
     }
 
-    /// Render `item` together with `frame` into this line's internal buffer and return a borrowed
-    /// view of the rendered bytes. The buffer is cleared before each render.
-    pub(crate) fn render_into<P: Progressive + ?Sized>(
-        &mut self,
+    /// Render `item` together with `frame`, appending to `buf`. Used by
+    /// [`Group`](crate::future::Group)s, which assemble many rows into one frame buffer.
+    pub(crate) fn render_to<P: Progressive + ?Sized>(
+        &self,
         item: &P,
         frame: &FrameContext,
-    ) -> &str {
-        let ctx = RenderContext {
-            spinner: frame.spinner_frame,
-            spinner_tick: frame.spinner_tick,
-            elapsed: frame.elapsed,
-            show_elapsed: frame.show_elapsed,
-            bar: self.bar.as_ref(),
-            bar_width: self.bar_width,
-            progress: item.progress(),
-            bytes_done: item.bytes_done(),
-            bytes_total: item.bytes_total(),
-            rate: item.rate(),
-            label: item.label(),
-            message: item.message(),
-            spinner_style: frame.spinner_style,
-            annotation_style: frame.annotation_style,
-        };
-        self.render_buf.clear();
-        self.layout.render(&ctx, &mut self.render_buf);
-        &self.render_buf
+        buf: &mut String,
+    ) {
+        let ctx = context(self.bar.as_ref(), self.bar_width, item, frame);
+        self.layout.render(&ctx, buf);
     }
 
-    /// Render `item` and write the result to `output` as the single line of a standalone wrapper:
-    /// hide cursor, clear current line, write content, flush. No-op when `is_tty` is false.
+    /// Render `item` and write the result to `output` as the single line of a standalone wrapper.
+    /// The whole frame — hide cursor, clear line, content — is assembled into one reusable buffer
+    /// and written in a single call, then flushed. No-op when `is_tty` is false.
     pub(crate) fn standalone_render<P: Progressive + ?Sized>(
         &mut self,
         item: &P,
@@ -82,11 +93,16 @@ impl Line {
         if !is_tty {
             return;
         }
-        let _ = self.render_into(item, frame);
+
+        let mut buf = std::mem::take(&mut self.frame_buf);
+        buf.clear();
+        buf.push_str(term::HIDE_CURSOR);
+        buf.push_str(term::CLEAR_LINE);
+        self.render_to(item, frame, &mut buf);
+        self.frame_buf = buf;
+
         output.with_lock(|w| {
-            let _ = w.write_all(term::HIDE_CURSOR);
-            let _ = clear_line(w);
-            let _ = w.write_all(self.render_buf.as_bytes());
+            let _ = w.write_all(self.frame_buf.as_bytes());
             let _ = w.flush();
         });
     }
@@ -97,8 +113,9 @@ impl Line {
         if !is_tty {
             return;
         }
+
         output.with_lock(|w| {
-            let _ = clear_line(w);
+            let _ = w.write_all(term::CLEAR_LINE.as_bytes());
             let _ = w.flush();
         });
     }

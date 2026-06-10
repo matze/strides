@@ -32,11 +32,9 @@ use std::task::{Context, Poll};
 
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
-use owo_colors::Style;
 use pin_project_lite::pin_project;
 
-use crate::progress::Progress;
-use crate::progressive::Progressive;
+use crate::progress::{common_builders, forward_progressive, Progress};
 use crate::Theme;
 
 pin_project! {
@@ -65,40 +63,6 @@ impl<S, F> ProgressStream<S, F> {
 }
 
 impl<S, F, M> ProgressStream<S, F, M> {
-    /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
-    /// the call site.
-    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
-        self.core.set_label(label.into());
-        self
-    }
-
-    /// Prepend the elapsed time to the line.
-    pub fn with_elapsed_time(mut self) -> Self {
-        self.core.enable_elapsed_time();
-        self
-    }
-
-    /// Render this row with `theme`. Drives standalone rendering when the stream is polled
-    /// directly; overrides the parent [`Group`]'s theme when pushed.
-    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
-        self.core.set_theme(theme.into());
-        self
-    }
-
-    /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
-    pub fn with_spinner_style(mut self, style: Style) -> Self {
-        self.core.set_spinner_style(style);
-        self
-    }
-
-    /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
-    /// default.
-    pub fn with_annotation_style(mut self, style: Style) -> Self {
-        self.core.set_annotation_style(style);
-        self
-    }
-
     /// Replace the displayed message each time `messages` yields a value. The item type is
     /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
     /// zero-copy; other formatted values should be `format!`'d at the call site.
@@ -117,41 +81,8 @@ impl<S, F, M> ProgressStream<S, F, M> {
     }
 }
 
-impl<S, F, M> Progressive for ProgressStream<S, F, M> {
-    fn label(&self) -> Option<&str> {
-        self.core.label()
-    }
-    fn message(&self) -> Option<&str> {
-        self.core.message()
-    }
-    fn progress(&self) -> Option<f64> {
-        self.core.progress()
-    }
-    fn bytes_done(&self) -> u64 {
-        self.core.bytes_done()
-    }
-    fn bytes_total(&self) -> Option<u64> {
-        self.core.bytes_total()
-    }
-    fn rate(&self) -> Option<f64> {
-        self.core.rate()
-    }
-    fn detach_rendering(&mut self) {
-        self.core.detach_rendering();
-    }
-    fn theme(&self) -> Option<&Theme> {
-        self.core.theme()
-    }
-    fn spinner_style(&self) -> Option<Style> {
-        self.core.spinner_style()
-    }
-    fn annotation_style(&self) -> Option<Style> {
-        self.core.annotation_style()
-    }
-    fn show_elapsed_time(&self) -> bool {
-        self.core.show_elapsed_time()
-    }
-}
+common_builders!({S, F, M}, ProgressStream<S, F, M>);
+forward_progressive!({S, F, M}, ProgressStream<S, F, M>);
 
 impl<S, F, M> Stream for ProgressStream<S, F, M>
 where
@@ -292,43 +223,9 @@ impl<S, F> ProgressBytesStream<S, F> {
 }
 
 impl<S, F, M> ProgressBytesStream<S, F, M> {
-    /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
-    /// the call site.
-    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
-        self.core.set_label(label.into());
-        self
-    }
-
-    /// Prepend the elapsed time to the line.
-    pub fn with_elapsed_time(mut self) -> Self {
-        self.core.enable_elapsed_time();
-        self
-    }
-
     /// Record the total number of bytes expected. Enables the bar and the ETA segment.
     pub fn with_len(mut self, total: u64) -> Self {
         self.core.state.set_bytes_total(total);
-        self
-    }
-
-    /// Render this row with `theme`. Drives standalone rendering when the stream is polled
-    /// directly; overrides the parent [`Group`]'s theme when pushed.
-    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
-        self.core.set_theme(theme.into());
-        self
-    }
-
-    /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
-    pub fn with_spinner_style(mut self, style: Style) -> Self {
-        self.core.set_spinner_style(style);
-        self
-    }
-
-    /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
-    /// default.
-    pub fn with_annotation_style(mut self, style: Style) -> Self {
-        self.core.set_annotation_style(style);
         self
     }
 
@@ -349,41 +246,8 @@ impl<S, F, M> ProgressBytesStream<S, F, M> {
     }
 }
 
-impl<S, F, M> Progressive for ProgressBytesStream<S, F, M> {
-    fn label(&self) -> Option<&str> {
-        self.core.label()
-    }
-    fn message(&self) -> Option<&str> {
-        self.core.message()
-    }
-    fn progress(&self) -> Option<f64> {
-        self.core.progress()
-    }
-    fn bytes_done(&self) -> u64 {
-        self.core.bytes_done()
-    }
-    fn bytes_total(&self) -> Option<u64> {
-        self.core.bytes_total()
-    }
-    fn rate(&self) -> Option<f64> {
-        self.core.rate()
-    }
-    fn detach_rendering(&mut self) {
-        self.core.detach_rendering();
-    }
-    fn theme(&self) -> Option<&Theme> {
-        self.core.theme()
-    }
-    fn spinner_style(&self) -> Option<Style> {
-        self.core.spinner_style()
-    }
-    fn annotation_style(&self) -> Option<Style> {
-        self.core.annotation_style()
-    }
-    fn show_elapsed_time(&self) -> bool {
-        self.core.show_elapsed_time()
-    }
-}
+common_builders!({S, F, M}, ProgressBytesStream<S, F, M>);
+forward_progressive!({S, F, M}, ProgressBytesStream<S, F, M>);
 
 impl<S, F, M> Stream for ProgressBytesStream<S, F, M>
 where
@@ -466,44 +330,10 @@ impl<S: Stream> ProgressCountStream<S> {
 }
 
 impl<S, M> ProgressCountStream<S, M> {
-    /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
-    /// the call site.
-    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
-        self.core.set_label(label.into());
-        self
-    }
-
-    /// Prepend the elapsed time to the line.
-    pub fn with_elapsed_time(mut self) -> Self {
-        self.core.enable_elapsed_time();
-        self
-    }
-
     /// Record the total number of items expected, overriding any total derived from
     /// [`Stream::size_hint`]. Enables the bar when the size hint did not.
     pub fn with_len(mut self, total: u64) -> Self {
         self.total = Some(total);
-        self
-    }
-
-    /// Render this row with `theme`. Drives standalone rendering when the stream is polled
-    /// directly; overrides the parent [`Group`]'s theme when pushed.
-    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
-        self.core.set_theme(theme.into());
-        self
-    }
-
-    /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
-    pub fn with_spinner_style(mut self, style: Style) -> Self {
-        self.core.set_spinner_style(style);
-        self
-    }
-
-    /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
-    /// default.
-    pub fn with_annotation_style(mut self, style: Style) -> Self {
-        self.core.set_annotation_style(style);
         self
     }
 
@@ -525,32 +355,8 @@ impl<S, M> ProgressCountStream<S, M> {
     }
 }
 
-impl<S, M> Progressive for ProgressCountStream<S, M> {
-    fn label(&self) -> Option<&str> {
-        self.core.label()
-    }
-    fn message(&self) -> Option<&str> {
-        self.core.message()
-    }
-    fn progress(&self) -> Option<f64> {
-        self.core.progress()
-    }
-    fn detach_rendering(&mut self) {
-        self.core.detach_rendering();
-    }
-    fn theme(&self) -> Option<&Theme> {
-        self.core.theme()
-    }
-    fn spinner_style(&self) -> Option<Style> {
-        self.core.spinner_style()
-    }
-    fn annotation_style(&self) -> Option<Style> {
-        self.core.annotation_style()
-    }
-    fn show_elapsed_time(&self) -> bool {
-        self.core.show_elapsed_time()
-    }
-}
+common_builders!({S, M}, ProgressCountStream<S, M>);
+forward_progressive!({S, M}, ProgressCountStream<S, M>);
 
 impl<S, M> Stream for ProgressCountStream<S, M>
 where
@@ -607,6 +413,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
+    use crate::progressive::Progressive;
     use futures_lite::{future, stream, StreamExt as FlStreamExt};
 
     #[test]

@@ -201,3 +201,99 @@ impl Progressive for Progress {
         self.state.with_elapsed_time
     }
 }
+
+/// Implement [`Progressive`](crate::progressive::Progressive) for an adapter holding a
+/// [`Progress`] in a field named `core`, forwarding every method. The first argument is the
+/// brace-wrapped generic parameter list of the impl, the second the adapter type.
+///
+/// [`Join`](crate::future::Join) does not use this: its `progress()` is derived from its
+/// completion count rather than read from the core.
+macro_rules! forward_progressive {
+    ({$($g:tt)*}, $ty:ty) => {
+        impl<$($g)*> $crate::progressive::Progressive for $ty {
+            fn label(&self) -> Option<&str> {
+                $crate::progressive::Progressive::label(&self.core)
+            }
+            fn message(&self) -> Option<&str> {
+                $crate::progressive::Progressive::message(&self.core)
+            }
+            fn progress(&self) -> Option<f64> {
+                $crate::progressive::Progressive::progress(&self.core)
+            }
+            fn bytes_done(&self) -> u64 {
+                $crate::progressive::Progressive::bytes_done(&self.core)
+            }
+            fn bytes_total(&self) -> Option<u64> {
+                $crate::progressive::Progressive::bytes_total(&self.core)
+            }
+            fn rate(&self) -> Option<f64> {
+                $crate::progressive::Progressive::rate(&self.core)
+            }
+            fn detach_rendering(&mut self) {
+                $crate::progressive::Progressive::detach_rendering(&mut self.core);
+            }
+            fn theme(&self) -> Option<&$crate::Theme> {
+                $crate::progressive::Progressive::theme(&self.core)
+            }
+            fn spinner_style(&self) -> Option<::owo_colors::Style> {
+                $crate::progressive::Progressive::spinner_style(&self.core)
+            }
+            fn annotation_style(&self) -> Option<::owo_colors::Style> {
+                $crate::progressive::Progressive::annotation_style(&self.core)
+            }
+            fn show_elapsed_time(&self) -> bool {
+                $crate::progressive::Progressive::show_elapsed_time(&self.core)
+            }
+        }
+    };
+}
+
+/// Implement the builder methods shared by every adapter holding a [`Progress`] in a field named
+/// `core`: `with_label`, `with_elapsed_time`, `with_theme`, `with_spinner_style` and
+/// `with_annotation_style`. Adapter-specific builders (`with_messages`, `with_progress`,
+/// `with_len`) stay in the adapter's own impl block. Arguments as in [`forward_progressive`].
+macro_rules! common_builders {
+    ({$($g:tt)*}, $ty:ty) => {
+        impl<$($g)*> $ty {
+            /// Set the static label shown in the [`Label`](crate::layout::Segment::Label)
+            /// segment. `&'static str` and `String` convert zero-copy; formatted values should be
+            /// `format!`'d at the call site.
+            pub fn with_label(
+                mut self,
+                label: impl Into<::std::borrow::Cow<'static, str>>,
+            ) -> Self {
+                self.core.set_label(label.into());
+                self
+            }
+
+            /// Prepend the elapsed time (seconds since the first poll) to the line.
+            pub fn with_elapsed_time(mut self) -> Self {
+                self.core.enable_elapsed_time();
+                self
+            }
+
+            /// Render this row with `theme`. Drives standalone rendering when polled directly;
+            /// overrides the parent group's theme for this row when pushed into a group.
+            pub fn with_theme(mut self, theme: impl Into<$crate::Theme>) -> Self {
+                self.core.set_theme(theme.into());
+                self
+            }
+
+            /// Apply `style` to the spinner character on this row, overriding the parent group's
+            /// default.
+            pub fn with_spinner_style(mut self, style: ::owo_colors::Style) -> Self {
+                self.core.set_spinner_style(style);
+                self
+            }
+
+            /// Apply `style` to the annotation (label) text on this row, overriding the parent
+            /// group's default.
+            pub fn with_annotation_style(mut self, style: ::owo_colors::Style) -> Self {
+                self.core.set_annotation_style(style);
+                self
+            }
+        }
+    };
+}
+
+pub(crate) use {common_builders, forward_progressive};

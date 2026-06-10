@@ -15,7 +15,7 @@ use futures_lite::{stream, Stream};
 use owo_colors::Style;
 use pin_project_lite::pin_project;
 
-use crate::progress::Progress;
+use crate::progress::{common_builders, Progress};
 use crate::progressive::Progressive;
 use crate::Theme;
 
@@ -70,42 +70,9 @@ impl<F: Future> Join<F> {
     }
 }
 
+common_builders!({F: Future, M}, Join<F, M>);
+
 impl<F: Future, M> Join<F, M> {
-    /// Render this row with `theme`. Used for both the standalone path (drives the spinner /
-    /// bar / cursor on its own line when awaited) and the per-row override path inside a
-    /// [`Group`](super::Group).
-    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
-        self.core.set_theme(theme.into());
-        self
-    }
-
-    /// Apply `style` to the spinner character on this row, overriding the parent Group's default.
-    pub fn with_spinner_style(mut self, style: Style) -> Self {
-        self.core.set_spinner_style(style);
-        self
-    }
-
-    /// Apply `style` to the annotation (label) text on this row, overriding the parent Group's
-    /// default.
-    pub fn with_annotation_style(mut self, style: Style) -> Self {
-        self.core.set_annotation_style(style);
-        self
-    }
-
-    /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
-    /// the call site.
-    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
-        self.core.set_label(label.into());
-        self
-    }
-
-    /// Prepend the elapsed time to the line.
-    pub fn with_elapsed_time(mut self) -> Self {
-        self.core.enable_elapsed_time();
-        self
-    }
-
     /// Replace the displayed message each time `messages` yields a value. The item type is
     /// anything that converts into a `Cow<'static, str>`: `&'static str` and `String` are
     /// zero-copy; other formatted values should be `format!`'d at the call site.

@@ -22,11 +22,9 @@ use std::task::{Context, Poll};
 
 use futures_lite::stream::Pending;
 use futures_lite::{stream, Stream};
-use owo_colors::Style;
 use pin_project_lite::pin_project;
 
-use crate::progress::Progress;
-use crate::progressive::Progressive;
+use crate::progress::{common_builders, forward_progressive, Progress};
 use crate::Theme;
 
 pin_project! {
@@ -63,14 +61,6 @@ impl<F> ProgressFuture<F> {
 }
 
 impl<F, M, P> ProgressFuture<F, M, P> {
-    /// Set the static label shown in the [`Label`](crate::layout::Segment::Label) segment.
-    /// `&'static str` and `String` convert zero-copy; formatted values should be `format!`'d at
-    /// the call site.
-    pub fn with_label(mut self, label: impl Into<Cow<'static, str>>) -> Self {
-        self.core.set_label(label.into());
-        self
-    }
-
     /// Replace the displayed message each time `messages` yields a value. When the stream is
     /// exhausted the last value remains visible. The item type is anything that converts into a
     /// `Cow<'static, str>`: `&'static str` and `String` are zero-copy; other formatted values
@@ -88,12 +78,6 @@ impl<F, M, P> ProgressFuture<F, M, P> {
         }
     }
 
-    /// Prepend the elapsed time (seconds since the future was first polled) to the line.
-    pub fn with_elapsed_time(mut self) -> Self {
-        self.core.enable_elapsed_time();
-        self
-    }
-
     /// Drive the progress bar from a stream of fractions in `0.0..=1.0`. The latest value wins.
     pub fn with_progress<S>(self, progress: S) -> ProgressFuture<F, M, S>
     where
@@ -106,65 +90,10 @@ impl<F, M, P> ProgressFuture<F, M, P> {
             core: self.core,
         }
     }
-
-    /// Render this row with `theme`. Used for both the standalone path (drives the spinner /
-    /// bar / cursor on its own line when awaited) and the per-row override path inside a
-    /// [`Group`] (the Group consults this theme when constructing the slot's line).
-    pub fn with_theme(mut self, theme: impl Into<Theme>) -> Self {
-        self.core.set_theme(theme.into());
-        self
-    }
-
-    /// Apply `style` to the spinner character on this row, overriding the parent
-    /// [`Group`]'s default.
-    pub fn with_spinner_style(mut self, style: Style) -> Self {
-        self.core.set_spinner_style(style);
-        self
-    }
-
-    /// Apply `style` to the annotation (label) text on this row, overriding the parent
-    /// [`Group`]'s default.
-    pub fn with_annotation_style(mut self, style: Style) -> Self {
-        self.core.set_annotation_style(style);
-        self
-    }
 }
 
-impl<F, M, P> Progressive for ProgressFuture<F, M, P> {
-    fn label(&self) -> Option<&str> {
-        self.core.label()
-    }
-    fn message(&self) -> Option<&str> {
-        self.core.message()
-    }
-    fn progress(&self) -> Option<f64> {
-        self.core.progress()
-    }
-    fn bytes_done(&self) -> u64 {
-        self.core.bytes_done()
-    }
-    fn bytes_total(&self) -> Option<u64> {
-        self.core.bytes_total()
-    }
-    fn rate(&self) -> Option<f64> {
-        self.core.rate()
-    }
-    fn detach_rendering(&mut self) {
-        self.core.detach_rendering();
-    }
-    fn theme(&self) -> Option<&Theme> {
-        self.core.theme()
-    }
-    fn spinner_style(&self) -> Option<Style> {
-        self.core.spinner_style()
-    }
-    fn annotation_style(&self) -> Option<Style> {
-        self.core.annotation_style()
-    }
-    fn show_elapsed_time(&self) -> bool {
-        self.core.show_elapsed_time()
-    }
-}
+common_builders!({F, M, P}, ProgressFuture<F, M, P>);
+forward_progressive!({F, M, P}, ProgressFuture<F, M, P>);
 
 impl<F, M, P> Future for ProgressFuture<F, M, P>
 where

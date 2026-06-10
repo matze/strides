@@ -27,10 +27,10 @@ use crate::term::Output;
 /// Combined theme for progress display, bundling a [`Spinner`] and a [`Bar`].
 #[derive(Clone)]
 pub struct Theme {
-    /// Spinner style to indicate activity.
-    pub(crate) spinner: Spinner,
-    /// Bar style to indicate progress.
-    pub(crate) bar: Bar,
+    /// Spinner style to indicate activity; `None` renders no spinner segment.
+    pub(crate) spinner: Option<Spinner>,
+    /// Bar style to indicate progress; `None` renders no bar segment.
+    pub(crate) bar: Option<Bar>,
     /// Width of the progress bar in characters.
     pub(crate) bar_width: Option<usize>,
     /// Ordering and formatting of the rendered progress line.
@@ -49,13 +49,13 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// Create an empty theme: inactive spinner, no bar, auto-detected bar width, default
+    /// Create an empty theme: no spinner, no bar, auto-detected bar width, default
     /// [`Layout`]. Most callers want [`Theme::default`] instead, which seeds a visible spinner;
     /// use `new` when building a theme bottom-up and explicitly setting every piece.
     pub const fn new() -> Self {
         Self {
-            spinner: Spinner::inactive(),
-            bar: Bar::empty(),
+            spinner: None,
+            bar: None,
             bar_width: None,
             layout: Layout::DEFAULT,
             output: Output::Stdout,
@@ -71,13 +71,13 @@ impl Theme {
 
     /// Set the [`Spinner`] used to indicate ongoing activity.
     pub const fn with_spinner(mut self, spinner: Spinner) -> Self {
-        self.spinner = spinner;
+        self.spinner = Some(spinner);
         self
     }
 
     /// Set the [`Bar`] used to render fractional progress.
     pub const fn with_bar(mut self, bar: Bar) -> Self {
-        self.bar = bar;
+        self.bar = Some(bar);
         self
     }
 

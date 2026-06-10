@@ -72,20 +72,14 @@ enum Tick {
 /// Render a single spinner `frame` colored by `gradient` and filled per `fill`, going through the
 /// real layout path so the example exercises [`Segment::with_gradient`] rather than reimplementing
 /// coloring. `tick` drives the pulse for [`SpinnerFill::Pulse`] and is ignored otherwise.
-fn gradient_spinner(
-    gradient: Gradient,
-    fill: SpinnerFill,
-    frame: &str,
-    tick: u64,
-    bar: &Bar,
-) -> String {
+fn gradient_spinner(gradient: Gradient, fill: SpinnerFill, frame: &str, tick: u64) -> String {
     let layout = Layout::from_segments([Segment::spinner().with_gradient(gradient, fill)]);
     let ctx = RenderContext {
         spinner: Some(frame),
         spinner_tick: tick,
         elapsed: Duration::ZERO,
         show_elapsed: false,
-        bar,
+        bar: None,
         bar_width: 0,
         progress: None,
         bytes_done: 0,
@@ -232,10 +226,6 @@ fn main() {
         print!("\x1b[{total_lines}A");
         let _ = std::io::stdout().flush();
 
-        // A throwaway bar for the RenderContext used to color gradient spinners; the spinner-only
-        // layout never renders it.
-        let demo_bar = Bar::new(' ', ' ');
-
         let deadline = Instant::now() + RUN_FOR;
         let mut events = (spinner_ticks, gradient_spinner_ticks, bar_ticks).merge();
 
@@ -279,13 +269,7 @@ fn main() {
             for (row, (name, _, gradient, fill)) in gradient_spinners.iter().enumerate() {
                 line(&format!(
                     "  {name:<name_width$}  {}",
-                    gradient_spinner(
-                        *gradient,
-                        *fill,
-                        gradient_frames[row],
-                        gradient_ticks[row],
-                        &demo_bar
-                    )
+                    gradient_spinner(*gradient, *fill, gradient_frames[row], gradient_ticks[row])
                 ));
             }
             line("");

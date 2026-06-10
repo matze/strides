@@ -180,11 +180,23 @@ pub struct Ticks {
     frames: Frames,
     /// Index of the next frame to yield.
     next: usize,
-    /// One-shot delay that is reset after each tick. `None` for an inactive spinner, which never
-    /// yields.
+    /// One-shot delay that is reset after each tick. `None` for a never-yielding stream.
     delay: Option<Delay>,
     /// Interval between ticks.
     interval: Duration,
+}
+
+impl Ticks {
+    /// A stream that neither yields a frame nor arms a timer. Used when there is no spinner to
+    /// animate or the output is not a terminal, so polling never schedules a wakeup.
+    pub(crate) const fn never() -> Self {
+        Self {
+            frames: Frames::Chars(""),
+            next: 0,
+            delay: None,
+            interval: Duration::MAX,
+        }
+    }
 }
 
 impl Stream for Ticks {
@@ -193,7 +205,7 @@ impl Stream for Ticks {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<&'static str>> {
         let this = self.get_mut();
 
-        // An inactive spinner carries no delay and never yields a frame.
+        // A never-yielding stream carries no delay.
         let Some(delay) = &mut this.delay else {
             return Poll::Pending;
         };
@@ -250,14 +262,6 @@ impl Spinner {
         }
     }
 
-    /// Create an inactive spinner that will not emit a frame.
-    pub const fn inactive() -> Self {
-        Self {
-            frames: Frames::Chars(""),
-            interval: Duration::MAX,
-        }
-    }
-
     /// Set an animation interval different from the default.
     pub const fn with_interval(mut self, interval: Duration) -> Self {
         self.interval = interval;
@@ -266,8 +270,8 @@ impl Spinner {
 
     /// Return a stream of frames at the set interval.
     pub fn ticks(&self) -> Ticks {
-        // An inactive spinner (no frames) carries no delay; `poll_next` short-circuits to
-        // `Pending` so it never yields and `Instant + interval` is never computed.
+        // A spinner without frames carries no delay; `poll_next` short-circuits to `Pending` so
+        // it never yields and `Instant + interval` is never computed.
         let delay = (!self.frames.is_empty()).then(|| Delay::new(self.interval));
         Ticks {
             frames: self.frames,

@@ -43,8 +43,8 @@ pub struct RenderContext<'a> {
     pub elapsed: Duration,
     /// Whether the elapsed time should be rendered at all.
     pub show_elapsed: bool,
-    /// Bar style used by [`Segment::Bar`].
-    pub bar: &'a Bar,
+    /// Bar style used by [`Segment::Bar`], or `None` when the theme has no bar.
+    pub bar: Option<&'a Bar>,
     /// Bar width in characters.
     pub bar_width: usize,
     /// Current progress fraction, or `None` when no progress is tracked.
@@ -363,8 +363,8 @@ impl Segment {
                 }
             }
             Segment::Bar => {
-                if let Some(progress) = ctx.progress {
-                    ctx.bar.render_into(buf, ctx.bar_width, progress);
+                if let (Some(bar), Some(progress)) = (ctx.bar, ctx.progress) {
+                    bar.render_into(buf, ctx.bar_width, progress);
                 }
             }
             Segment::Label { style, width } => {
@@ -568,15 +568,13 @@ impl Default for Layout {
 mod tests {
     use super::*;
 
-    use crate::bar::Bar;
-
     fn context() -> RenderContext<'static> {
         RenderContext {
             spinner: None,
             spinner_tick: 0,
             elapsed: Duration::from_millis(1500),
             show_elapsed: false,
-            bar: EMPTY_BAR,
+            bar: None,
             bar_width: 10,
             progress: None,
             bytes_done: 0,
@@ -588,8 +586,6 @@ mod tests {
             annotation_style: Style::new(),
         }
     }
-
-    static EMPTY_BAR: &Bar = &Bar::empty();
 
     #[test]
     fn skips_empty_segments_and_their_separators() {

@@ -26,7 +26,7 @@ pub(crate) struct FrameContext {
 }
 
 pub(crate) struct Line {
-    bar: Bar,
+    bar: Option<Bar>,
     bar_width: usize,
     layout: Layout,
     render_buf: String,
@@ -54,7 +54,7 @@ impl Line {
             spinner_tick: frame.spinner_tick,
             elapsed: frame.elapsed,
             show_elapsed: frame.show_elapsed,
-            bar: &self.bar,
+            bar: self.bar.as_ref(),
             bar_width: self.bar_width,
             progress: item.progress(),
             bytes_done: item.bytes_done(),

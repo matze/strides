@@ -10,7 +10,7 @@ use owo_colors::Style;
 
 use crate::line::{FrameContext, Line};
 use crate::progressive::ProgressiveFuture;
-use crate::spinner::{Spinner, Ticks};
+use crate::spinner::Ticks;
 use crate::term::{self, clear_line, CursorGuard, Output};
 use crate::Theme;
 
@@ -83,12 +83,11 @@ impl<'a, O> Group<'a, O> {
         let output = theme.output;
         let is_tty = output.is_terminal();
 
-        // A non-terminal output never renders, so active ticks would only wake the task every
-        // interval for nothing. Substitute the inactive spinner's never-yielding ticks.
-        let ticks = if is_tty {
-            theme.spinner.ticks()
-        } else {
-            Spinner::inactive().ticks()
+        // A non-terminal output never renders, and a theme without a spinner has nothing to
+        // animate; both get the never-yielding ticks so polling schedules no timer wakeups.
+        let ticks = match &theme.spinner {
+            Some(spinner) if is_tty => spinner.ticks(),
+            _ => Ticks::never(),
         };
         Self {
             slots: Vec::new(),

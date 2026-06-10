@@ -82,12 +82,12 @@ pub mod styles {
 }
 
 /// Progress bar style characters.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Bar {
     /// Character to symbolize incompleteness.
-    empty: Option<char>,
+    empty: char,
     /// Character to symbolize completeness.
-    complete: Option<char>,
+    complete: char,
     /// Characters in between complete and incomplete.
     in_between: Option<&'static str>,
     /// Left border character
@@ -109,22 +109,8 @@ impl Bar {
     /// the filled portion. See the [`styles`] module for pre-defined variants.
     pub const fn new(empty: char, complete: char) -> Self {
         Self {
-            empty: Some(empty),
-            complete: Some(complete),
-            in_between: None,
-            left_border: None,
-            right_border: None,
-            filled_style: None,
-            empty_style: None,
-            filled_gradient: None,
-            empty_gradient: None,
-        }
-    }
-
-    pub(crate) const fn empty() -> Self {
-        Self {
-            empty: None,
-            complete: None,
+            empty,
+            complete,
             in_between: None,
             left_border: None,
             right_border: None,
@@ -155,37 +141,33 @@ impl Bar {
             buf.push_str(left);
         }
 
-        if let Some(c) = self.complete {
-            // The filled run occupies columns `0..filled`.
-            self.render_run(
-                buf,
-                c,
-                filled,
-                0,
-                width,
-                fraction,
-                self.filled_gradient,
-                self.filled_style,
-            );
-        }
+        // The filled run occupies columns `0..filled`.
+        self.render_run(
+            buf,
+            self.complete,
+            filled,
+            0,
+            width,
+            fraction,
+            self.filled_gradient,
+            self.filled_style,
+        );
 
         if let Some(in_between) = self.in_between {
             buf.push_str(in_between);
         }
 
-        if let Some(c) = self.empty {
-            // The empty run continues at column `filled`.
-            self.render_run(
-                buf,
-                c,
-                remaining,
-                filled,
-                width,
-                fraction,
-                self.empty_gradient,
-                self.empty_style,
-            );
-        }
+        // The empty run continues at column `filled`.
+        self.render_run(
+            buf,
+            self.empty,
+            remaining,
+            filled,
+            width,
+            fraction,
+            self.empty_gradient,
+            self.empty_style,
+        );
 
         if let Some(right) = self.right_border {
             buf.push_str(right);

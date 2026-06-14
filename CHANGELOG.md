@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.0.0-rc.4
+
 ### Breaking changes
 
 - A spinner frame is now a string slice rather than a single character, so
@@ -35,6 +37,7 @@
   it sweeps) or `Pulse(period)` (one color breathing over the spinner's tick
   count, for single-glyph spinners). The `gallery` example demos both, plus all
   three bar axes.
+
 
 ## 1.0.0-rc.3
 

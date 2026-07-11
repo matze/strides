@@ -492,7 +492,7 @@ static DEFAULT_SEGMENTS: [Segment; 5] = [
 ];
 
 impl Layout {
-    /// The default layout: elapsed time, spinner, label, bar and message, joined by a single
+    /// The default layout: spinner, elapsed time, label, bar and message, joined by a single
     /// space.
     pub const DEFAULT: Layout = Layout::new(&DEFAULT_SEGMENTS);
 

@@ -1,7 +1,7 @@
 //! Per-row rendering helper.
 //!
 //! A [`Line`] holds the theme bits used to render one terminal row (bar, bar width, layout). It
-//! only fills buffers — callers (standalone wrappers, [`Group`]s) own the actual terminal writes
+//! only fills buffers — callers (standalone wrappers, `Group`s) own the actual terminal writes
 //! and cursor management.
 
 use std::time::Duration;

@@ -202,7 +202,7 @@ impl Progressive for Progress {
     }
 }
 
-/// Implement [`Progressive`](crate::progressive::Progressive) for an adapter holding a
+/// Implement [`Progressive`] for an adapter holding a
 /// [`Progress`] in a field named `core`, forwarding every method. The first argument is the
 /// brace-wrapped generic parameter list of the impl, the second the adapter type.
 ///

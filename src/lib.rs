@@ -79,7 +79,7 @@
 //! ## Layout
 //!
 //! The order, spacing and per-element formatting of a progress line is controlled by a [`Layout`],
-//! an ordered list of [`Segment`]s. [`Layout::DEFAULT`] renders elapsed time, spinner, label, bar
+//! an ordered list of [`Segment`]s. [`Layout::DEFAULT`] renders spinner, elapsed time, label, bar
 //! and message. Segments with nothing to show are skipped, so spacing stays correct. Attach a
 //! custom layout with [`Theme::with_layout`]:
 //!

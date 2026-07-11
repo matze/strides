@@ -31,7 +31,16 @@ reqwest = { version = "0.11.0", default-features = false, features = ["rustls", 
 tokio = { version = "1.47.0", features = ["full"] }
 tokio-util = { version = "0.7.17", features = ["codec", "io"] }
 
+[lints.rust]
+unused_must_use = "forbid"
+unsafe_code = "forbid"
+
+[lints.clippy]
+panic = "forbid"
+todo = "forbid"
+unimplemented = "forbid"
+unwrap_used = "forbid"
+
 [[bench]]
 name = "render"
 harness = false
-

@@ -137,7 +137,7 @@ pub mod styles {
 /// [`Spinner::frames`]). Frame data is `&'static` so spinners, themes and the adapters built from
 /// them carry no lifetime parameter; frames computed at runtime can be promoted with
 /// [`String::leak`] / [`Vec::leak`].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Frames {
     /// Each `char` of the string is one frame.
     Chars(&'static str),
@@ -232,7 +232,7 @@ impl Stream for Ticks {
 }
 
 /// A spinner that emits a frame at a set interval.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Spinner {
     /// Frames making up the spinner.
     frames: Frames,

@@ -25,7 +25,7 @@ use crate::spinner::{styles, Spinner};
 use crate::term::Output;
 
 /// Combined theme for progress display, bundling a [`Spinner`] and a [`Bar`].
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Theme {
     /// Spinner style to indicate activity; `None` renders no spinner segment.
     pub(crate) spinner: Option<Spinner>,

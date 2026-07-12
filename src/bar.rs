@@ -82,7 +82,7 @@ pub mod styles {
 }
 
 /// Progress bar style characters.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Bar {
     /// Character to symbolize incompleteness.
     empty: char,

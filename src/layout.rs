@@ -33,6 +33,7 @@ use crate::color::{push_gradient_chars, push_styled, Gradient};
 ///
 /// Call sites fill this in once per frame; segments read from it. Fields that hold an [`Option`]
 /// signal absence — the corresponding segment then renders nothing.
+#[derive(Clone, Debug)]
 pub struct RenderContext<'a> {
     /// Current spinner frame, if the spinner has ticked at least once.
     pub spinner: Option<&'a str>,
@@ -92,7 +93,7 @@ pub enum SpinnerFill {
 /// Construct segments with the associated functions ([`Segment::spinner`], [`Segment::elapsed`],
 /// …) and refine them with the `with_*` builders. A `with_*` builder applied to a segment it does
 /// not affect returns that segment unchanged.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Segment {
     /// The spinner frame.
     Spinner {
@@ -467,7 +468,7 @@ fn format_eta_secs(secs: f64, buf: &mut String) {
 ///
 /// A `Layout` holds a sequence of [`Segment`]s and a separator. [`render`](Layout::render) walks
 /// the segments, drops the ones that produce no output, and joins the rest with the separator.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Layout {
     segments: Cow<'static, [Segment]>,
     separator: Cow<'static, str>,

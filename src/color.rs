@@ -34,7 +34,7 @@ pub struct Rgb(pub u8, pub u8, pub u8);
 /// nearest endpoint. Backed by a `&'static` slice so gradients can live in `const`/`static` items
 /// and stay [`Copy`] — build them as constants, mirroring [`Spinner::frames`](crate::spinner::Spinner::frames)
 /// and [`Layout::new`](crate::layout::Layout::new).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Gradient {
     /// Color stops, ascending by position.
     stops: &'static [(f64, Rgb)],
